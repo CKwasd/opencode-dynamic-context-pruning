@@ -166,6 +166,11 @@ export async function setup(ctx: Plugin.Context) {
                             if (!input?.trim()) return open()
                             const route = ctx.ui.router.current()
                             if (route.type !== "session") return open()
+                            // These two have a dialog built for them. Letting the
+                            // server format them as text puts a 60-column ASCII
+                            // table in a toast, which truncates and reflows it.
+                            const sub = input.trim().split(/\s+/)[0]
+                            if (sub === "context" || sub === "stats") return open(sub)
                             try {
                                 await ctx.client.session.command({
                                     sessionID: route.sessionID,

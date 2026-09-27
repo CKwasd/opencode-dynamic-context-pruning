@@ -87,9 +87,19 @@ const allTime = {
 
 test("the stats text reports retrieval for the session and all time", () => {
     const out = formatStatsMessage(50_000, 2_000, 5, 8, 900, allTime, 1_500)
-    assert.match(out, /Tokens saved: {4}~100K tokens/)
-    assert.match(out, /Retrieved: {8}~1\.5K tokens put back/)
-    assert.match(out, /Tokens retrieved: ~4K tokens/)
+    assert.match(out, /Tokens saved:\s+~100K tokens/)
+    assert.match(out, /Retrieved:\s+~1\.5K tokens put back/)
+    assert.match(out, /Tokens retrieved:\s+~4K tokens/)
+})
+
+test("every label in the table starts its value in the same column", () => {
+    const out = formatStatsMessage(50_000, 2_000, 5, 8, 900, allTime, 1_500)
+    const columns = out
+        .split("\n")
+        .filter((line) => /^ {2}\S.*?:/.test(line))
+        .map((line) => line.indexOf(line.split(":")[1].trim()))
+    assert.ok(columns.length >= 9, `expected the whole table, got ${columns.length} rows`)
+    assert.equal(new Set(columns).size, 1, `values start at columns ${[...new Set(columns)]}`)
 })
 
 test("an absent retrieval shows no row rather than a zero", () => {
