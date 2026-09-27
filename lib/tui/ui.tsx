@@ -136,13 +136,14 @@ export function Metric(props: {
     hint?: string
     labelWidth?: number
 }) {
-    // The column is a floor, not a target. A label longer than the column
-    // overflows its box and pushes the value against it, which is what made
-    // "Tokens retrieved" render as one run-on word in a narrow dialog.
+    // The column is a floor, not a target, and it must not be squeezed: yoga
+    // shrinks flex items by default, so in a narrow container a 24-wide label
+    // box collapses, the label overflows, and the value is pushed against it.
+    // That is what rendered "Tokens saved~28.1K tokens" as one run-on line.
     const column = Math.max(props.labelWidth ?? 0, props.label.length, LABEL_COLUMN)
     return (
         <box flexDirection="row" gap={2}>
-            <box width={column}>
+            <box width={column} flexShrink={0}>
                 <text fg={props.theme.textMuted}>{props.label}</text>
             </box>
             <box flexDirection="row" gap={1} flexGrow={1}>
