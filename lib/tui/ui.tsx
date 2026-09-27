@@ -136,9 +136,13 @@ export function Metric(props: {
     hint?: string
     labelWidth?: number
 }) {
+    // The column is a floor, not a target. A label longer than the column
+    // overflows its box and pushes the value against it, which is what made
+    // "Tokens retrieved" render as one run-on word in a narrow dialog.
+    const column = Math.max(props.labelWidth ?? 0, props.label.length, LABEL_COLUMN)
     return (
         <box flexDirection="row" gap={2}>
-            <box width={props.labelWidth ?? LABEL_COLUMN}>
+            <box width={column}>
                 <text fg={props.theme.textMuted}>{props.label}</text>
             </box>
             <box flexDirection="row" gap={1} flexGrow={1}>
