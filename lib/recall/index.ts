@@ -235,9 +235,9 @@ export function createListBlocksTool(ctx: ToolContext) {
                 const state = block.active ? "active" : "inactive"
                 return (
                     `${formatBlockRef(block.blockId, ctx.state.idFormat)}  ${state}  ${block.topic}  ` +
-                    `(~${formatTokenCount(block.summaryTokens, true)} summary, ` +
+                    `(~${formatTokenCount(block.summaryTokens)} summary, ` +
                     `${block.directMessageIds.length} messages, ` +
-                    `saved ${formatTokenCount(block.compressedTokens, true)})`
+                    `saved ${formatTokenCount(block.compressedTokens)})`
                 )
             })
             return [
@@ -432,7 +432,10 @@ export function renderRecallResult(matches: RecallMatch[], terms: string[] = [])
     const lines = [header]
     for (const match of matches) {
         lines.push(
-            `  ${match.ref}  ${match.role}  ~${formatTokenCount(match.tokens, true)}` +
+            // The unit matters: a bare "~678" next to a reference reads as part
+            // of the identifier, and a model in a sandbox trial took it for the
+            // message index and built "m0678" out of it.
+            `  ${match.ref}  ${match.role}  ~${formatTokenCount(match.tokens)}` +
                 `  (${match.hitTerms}/${terms.length || match.hitTerms} terms)` +
                 (match.blockRefs.length > 0 ? `  in ${match.blockRefs.join(", ")}` : "") +
                 `\n    ${match.snippet}`,
