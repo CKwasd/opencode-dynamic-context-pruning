@@ -18,10 +18,14 @@
             "types": "./dist/index.d.ts",
             "import": "./dist/index.js"
         },
-        "./tui": {
-            "types": "./dist/tui.d.ts",
-            "import": "./tui.tsx"
-        }
+    "./rpc": {
+      "types": "./lib/v2/rpc.ts",
+      "import": "./lib/v2/rpc.ts"
+    },
+    "./tui": {
+      "types": "./dist/tui.d.ts",
+      "import": "./tui.tsx"
+    }
     },
     "scripts": {
         "clean": "rm -rf dist",
