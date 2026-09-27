@@ -6,6 +6,7 @@ import {
     renderMessagePriorityGuidance,
 } from "../../prompts/extensions/nudge"
 import type { RuntimePrompts } from "../../prompts/store"
+import { formatTokenBudgetLine } from "../../token-budget"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 import {
     type CompressionPriorityMap,
@@ -156,13 +157,26 @@ function resolveContextTokenLimit(
     return parseLimitValue(globalLimit)
 }
 
-export function isContextOverLimits(
+export interface ContextThresholds {
+    /** Tokens the last assistant message reported for the whole request. */
+    currentTokens: number
+    /** Where the strong nudge starts: maxContextLimit plus the summary buffer. */
+    maxContextLimit: number | undefined
+    minContextLimit: number | undefined
+}
+
+/**
+ * The numbers both the threshold test and the displayed budget line are built
+ * from. Resolving them twice would let the warning and the figure beside it
+ * disagree, which is worse than either alone.
+ */
+export function resolveContextThresholds(
     config: PluginConfig,
     state: SessionState,
     providerId: string | undefined,
     modelId: string | undefined,
     messages: WithParts[],
-) {
+): ContextThresholds {
     const summaryTokenExtension = config.compress.summaryBuffer
         ? getActiveSummaryTokenUsage(state)
         : 0
@@ -173,12 +187,30 @@ export function isContextOverLimits(
         modelId,
         "max",
     )
-    const maxContextLimit =
-        resolvedMaxContextLimit === undefined
-            ? undefined
-            : resolvedMaxContextLimit + summaryTokenExtension
-    const minContextLimit = resolveContextTokenLimit(config, state, providerId, modelId, "min")
-    const currentTokens = getCurrentTokenUsage(state, messages)
+    return {
+        currentTokens: getCurrentTokenUsage(state, messages),
+        maxContextLimit:
+            resolvedMaxContextLimit === undefined
+                ? undefined
+                : resolvedMaxContextLimit + summaryTokenExtension,
+        minContextLimit: resolveContextTokenLimit(config, state, providerId, modelId, "min"),
+    }
+}
+
+export function isContextOverLimits(
+    config: PluginConfig,
+    state: SessionState,
+    providerId: string | undefined,
+    modelId: string | undefined,
+    messages: WithParts[],
+) {
+    const { currentTokens, maxContextLimit, minContextLimit } = resolveContextThresholds(
+        config,
+        state,
+        providerId,
+        modelId,
+        messages,
+    )
 
     const overMaxLimit = maxContextLimit === undefined ? false : currentTokens > maxContextLimit
     const overMinLimit = minContextLimit === undefined ? true : currentTokens >= minContextLimit
@@ -319,8 +351,12 @@ function applyRangeModeAnchoredNudge(
     messages: WithParts[],
     baseNudgeText: string,
     compressedBlockGuidance: string,
+    extraText?: string,
 ): void {
-    const nudgeText = appendGuidanceToDcpTag(baseNudgeText, compressedBlockGuidance)
+    const nudgeText = appendGuidanceToDcpTag(
+        baseNudgeText,
+        [compressedBlockGuidance, extraText ?? ""].filter(Boolean).join("\n"),
+    )
     if (!nudgeText.trim()) {
         return
     }
@@ -380,11 +416,16 @@ export function applyAnchoredNudges(
     }
 
     const compressedBlockGuidance = buildCompressedBlockGuidance(state)
+    const { providerId, modelId } = getModelInfo(messages)
+    const budgetLine = formatTokenBudgetLine(
+        resolveContextThresholds(config, state, providerId, modelId, messages),
+    )
     applyRangeModeAnchoredNudge(
         state.nudges.contextLimitAnchors,
         messages,
         prompts.contextLimitNudge,
         compressedBlockGuidance,
+        budgetLine,
     )
     applyRangeModeAnchoredNudge(
         turnNudgeAnchors,
