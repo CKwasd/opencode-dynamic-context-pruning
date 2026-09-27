@@ -1,9 +1,14 @@
 /** @jsxImportSource @opentui/solid */
 import type { Plugin } from "@opencode/plugin/tui"
-import { ContextDialog, PanelDialog, StatsDialog, StatusDialog } from "../tui/dialogs"
-import type { ViewApi } from "../tui/types"
+import { createSignal } from "solid-js"
+import { ContextDialog, StatsDialog, StatusDialog } from "../tui/dialogs"
+import { DcpPanelView } from "../tui/panel"
+import { createSnapshotCache } from "../tui/snapshot-cache"
+import type { SnapshotView, ViewApi } from "../tui/types"
 import { rpc } from "./rpc"
 import { panelTheme } from "./theme"
+
+const PANEL = "dcp"
 
 export async function setup(ctx: Plugin.Context) {
     const client = ctx.client.rpc(rpc)
@@ -36,6 +41,12 @@ export async function setup(ctx: Plugin.Context) {
             return
         }
         const sessionID = route.sessionID
+        // W18: the bare command opens the session panel instead of a modal, so
+        // the conversation stays visible and the numbers stay on screen.
+        if (page === "panel") {
+            ctx.ui.panel.open(PANEL)
+            return
+        }
         try {
             const data = await client.snapshot({ sessionID }, options())
             const back = () => {
@@ -43,29 +54,7 @@ export async function setup(ctx: Plugin.Context) {
             }
             if (page === "context")
                 show(() => <ContextDialog api={api} breakdown={data.context} onBack={back} />)
-            else if (page === "stats")
-                show(() => <StatsDialog api={api} report={data.stats} onBack={back} />)
-            else
-                show(() => (
-                    <PanelDialog
-                        api={api}
-                        manualMode={data.manualMode}
-                        canCompress={data.canCompress}
-                        blockedReason={data.blockedReason}
-                        onContext={() => {
-                            void open("context")
-                        }}
-                        onStats={() => {
-                            void open("stats")
-                        }}
-                        onManual={(enabled) => {
-                            void client
-                                .manual({ sessionID, enabled }, options())
-                                .then(back)
-                                .catch(error)
-                        }}
-                    />
-                ))
+            else show(() => <StatsDialog api={api} report={data.stats} onBack={back} />)
         } catch (cause) {
             error(cause)
         }
@@ -79,10 +68,36 @@ export async function setup(ctx: Plugin.Context) {
                   : String(cause)
         show(() => <StatusDialog api={api} title="DCP" eyebrow="DCP Error" message={message} />)
     }
+    // W19: the panel used to take one snapshot when it opened and then go
+    // stale. Every notice means the server state moved, so drop the cache and
+    // let the slot render refetch. Reading revision() inside render is what
+    // makes the refresh actually repaint.
+    const cache = createSnapshotCache<SnapshotView>()
+    const [revision, setRevision] = createSignal(0)
+    const invalidate = (sessionID?: string) => {
+        cache.invalidate(sessionID)
+        setRevision((n) => n + 1)
+    }
+    async function ensure(sessionID: string): Promise<SnapshotView | undefined> {
+        if (!cache.shouldFetch(sessionID)) return cache.get(sessionID)
+        cache.beginFetch(sessionID)
+        try {
+            const data: SnapshotView = await client.snapshot({ sessionID }, options())
+            cache.put(sessionID, data)
+            return data
+        } catch {
+            return undefined
+        } finally {
+            cache.endFetch(sessionID)
+            setRevision((n) => n + 1)
+        }
+    }
+
     // W16: DCP formats its own notification text and emits it over RPC. Until
     // this subscription existed the server computed the report and dropped it.
     const unsubscribe = client.events.on("notice", (event) => {
         const { title, text, level } = event.data
+        invalidate(event.data.sessionID)
         ctx.ui.toast.show({
             title,
             message: text,
@@ -94,6 +109,44 @@ export async function setup(ctx: Plugin.Context) {
                 message: text,
                 notification: { when: "blurred" },
             })
+    })
+
+    // W18: contribute to the host's session panel so /dcp no longer takes over
+    // the screen. The host owns layout, focus and input scope.
+    const unclaimPanel = ctx.ui.slot({
+        append: "session.panel",
+        render(input) {
+            if (input.name !== PANEL) return null
+            revision()
+            const data = cache.get(input.sessionID)
+            if (!data) {
+                void ensure(input.sessionID)
+                return (
+                    <box paddingLeft={2} paddingTop={1}>
+                        <text fg={panelTheme(ctx.theme).textMuted}>Loading DCP...</text>
+                    </box>
+                )
+            }
+            return (
+                <DcpPanelView
+                    api={api}
+                    snapshot={data}
+                    width={input.width}
+                    onContext={() => {
+                        void open("context")
+                    }}
+                    onStats={() => {
+                        void open("stats")
+                    }}
+                    onManual={(enabled) => {
+                        void client
+                            .manual({ sessionID: input.sessionID, enabled }, options())
+                            .then(() => invalidate(input.sessionID))
+                            .catch(error)
+                    }}
+                />
+            )
+        },
     })
 
     ctx.ui.slot({
@@ -130,5 +183,8 @@ export async function setup(ctx: Plugin.Context) {
         },
     })
 
-    return unsubscribe
+    return () => {
+        unsubscribe()
+        unclaimPanel()
+    }
 }
