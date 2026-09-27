@@ -37,7 +37,11 @@ function selectionFor(state: ReturnType<typeof createSessionState>, messages: Wi
     const first = context.rawMessages[0]
     const last = context.rawMessages[context.rawMessages.length - 1]
     const start = { kind: "message" as const, rawIndex: 0, messageId: first.info.id }
-    const end = { kind: "message" as const, rawIndex: context.rawMessages.length - 1, messageId: last.info.id }
+    const end = {
+        kind: "message" as const,
+        rawIndex: context.rawMessages.length - 1,
+        messageId: last.info.id,
+    }
     return { context, selection: resolveSelection(context, start, end) }
 }
 
@@ -161,7 +165,8 @@ test("the list is ordered by read count and capped", () => {
     const state = createSessionState()
     const messages = [] as WithParts[]
     // One hot file (30 reads) and 30 cold ones (2 reads each).
-    for (let i = 0; i < 30; i++) messages.push(toolMessage(`hot${i}`, "read", { filePath: "hot.ts" }))
+    for (let i = 0; i < 30; i++)
+        messages.push(toolMessage(`hot${i}`, "read", { filePath: "hot.ts" }))
     for (let i = 0; i < 30; i++) {
         messages.push(toolMessage(`a${i}`, "read", { filePath: `cold${i}.ts` }))
         messages.push(toolMessage(`b${i}`, "read", { filePath: `cold${i}.ts` }))

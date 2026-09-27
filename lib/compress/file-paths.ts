@@ -10,7 +10,10 @@ const MIN_READS = 2
 const MAX_PATHS = 25
 
 function normalize(path: string): string {
-    return path.replace(/[\\/]+/g, "/").replace(/^\.\//, "").toLowerCase()
+    return path
+        .replace(/[\\/]+/g, "/")
+        .replace(/^\.\//, "")
+        .toLowerCase()
 }
 
 function pathSegments(path: string): string[] {
@@ -106,8 +109,7 @@ export function appendRetainedFilePaths(
 
     if (retained.length === 0) return summary
 
-    const heading =
-        "\n\nFiles read repeatedly in this range and not named in the summary above:"
+    const heading = "\n\nFiles read repeatedly in this range and not named in the summary above:"
     const body = retained.map((entry) => `\n- ${entry.path} (${entry.reads}x)`).join("")
     return summary + heading + body
 }
