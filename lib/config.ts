@@ -677,6 +677,9 @@ const defaultConfig: PluginConfig = {
         enabled: false,
         automaticStrategies: true,
     },
+    // ponytail: accepted and persisted for schema compatibility, but nothing
+    // reads it. Older builds documented a per-tool turn-protection window; the
+    // behaviour it promised now comes from strategies.purgeErrors.turns.
     turnProtection: {
         enabled: false,
         turns: 4,
