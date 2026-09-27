@@ -1,6 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { getConfig } from "./lib/config"
 import { createCompressMessageTool, createCompressRangeTool } from "./lib/compress"
+import { createListBlocksTool, createReadItemTool, createRecallTool } from "./lib/recall"
 import {
     compressDisabledByOpencode,
     hasExplicitToolPermission,
@@ -85,6 +86,14 @@ const server: Plugin = (async (ctx) => {
                     config.compress.mode === "message"
                         ? createCompressMessageTool(compressToolContext)
                         : createCompressRangeTool(compressToolContext),
+            }),
+            // Retrieval. Gated on commands rather than compress.permission: they
+            // cannot compress anything, so denying compression need not hide
+            // what has already been compressed.
+            ...(config.commands.enabled && {
+                list_blocks: createListBlocksTool(compressToolContext),
+                read_item: createReadItemTool(compressToolContext),
+                recall: createRecallTool(compressToolContext),
             }),
         },
         config: async (opencodeConfig) => {

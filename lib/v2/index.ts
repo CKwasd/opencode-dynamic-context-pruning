@@ -4,6 +4,7 @@ import { getConfig } from "../config"
 import { Logger } from "../logger"
 import { PromptStore } from "../prompts/store"
 import { createCompressMessageTool, createCompressRangeTool } from "../compress"
+import { createListBlocksTool, createReadItemTool, createRecallTool } from "../recall"
 import { attachCompressionDuration } from "../compress/state"
 import { createCommandExecuteHandler, createSystemPromptHandler } from "../hooks"
 import {
@@ -203,6 +204,14 @@ export async function setup(ctx: Plugin.Context) {
         return { state, entries, session, messages }
     }
 
+    const retrievalContext = (state: SessionState) => ({
+        client,
+        state,
+        logger,
+        config,
+        prompts,
+    })
+
     function allowed(state: SessionState) {
         if (state.isSubAgent && !config.experimental.allowSubAgents)
             throw new Error("DCP compression is disabled in subagents")
@@ -340,6 +349,50 @@ export async function setup(ctx: Plugin.Context) {
                     }),
             }),
         )
+
+        if (config.commands.enabled) {
+            const factories = {
+                list_blocks: createListBlocksTool,
+                read_item: createReadItemTool,
+                recall: createRecallTool,
+            }
+            // Description and args are read off a throwaway state; the executor
+            // is rebuilt per call against the session's live state, the same way
+            // the compress tool above does it.
+            const specs = Object.entries(factories).map(([name, make]) => {
+                const proto = make(retrievalContext(createSessionState("compact")))
+                return { name, make, description: proto.description, args: proto.args }
+            })
+
+            await ctx.tool.transform((editor) => {
+                for (const spec of specs) {
+                    editor.add({
+                        name: spec.name,
+                        description: spec.description,
+                        input: tool.schema.object(spec.args),
+                        options: { codemode: false },
+                        execute: (input, context) =>
+                            serial(context.sessionID, async () => {
+                                const { state } = await load(context.sessionID, context.agent)
+                                const impl = spec.make(retrievalContext(state))
+                                const result = await impl.execute(
+                                    input as never,
+                                    {
+                                        sessionID: context.sessionID,
+                                        messageID: context.messageID,
+                                        callID: context.id,
+                                        agent: context.agent,
+                                        directory: ctx.location.directory,
+                                        worktree: ctx.location.directory,
+                                        abort: new AbortController().signal,
+                                    } as never,
+                                )
+                                return { content: String(result) }
+                            }),
+                    })
+                }
+            })
+        }
     }
     if (config.commands.enabled)
         await ctx.command.transform((editor) => {
