@@ -1,7 +1,12 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { Logger } from "../lib/logger"
-import { assignMessageRefs } from "../lib/message-ids"
+import {
+    assignMessageRefs,
+    formatMessageRef,
+    MESSAGE_REF_MAX_INDEX,
+    parseMessageRef,
+} from "../lib/message-ids"
 import { checkSession, createSessionState, type WithParts } from "../lib/state"
 
 function textPart(messageID: string, sessionID: string, id: string, text: string) {
@@ -86,4 +91,18 @@ test("checkSession resets message id aliases after native compaction", async () 
     assert.equal(state.messageIds.byRef.get("m0001"), "msg-assistant-summary")
     assert.equal(state.messageIds.byRef.get("m0002"), "msg-user-follow-up")
     assert.equal(state.messageIds.nextRef, 3)
+})
+
+test("message refs keep counting past 9999 instead of throwing", () => {
+    assert.equal(MESSAGE_REF_MAX_INDEX, Number.MAX_SAFE_INTEGER)
+    assert.equal(formatMessageRef(9999), "m9999")
+    assert.equal(formatMessageRef(10000), "m10000")
+    assert.equal(formatMessageRef(123456), "m123456")
+    assert.equal(parseMessageRef("m10000"), 10000)
+    assert.equal(parseMessageRef("m123456"), 123456)
+    assert.equal(parseMessageRef("m0001"), 1)
+    // Still rejected: too short to be a padded ref, or not an index at all.
+    assert.equal(parseMessageRef("m123"), null)
+    assert.equal(parseMessageRef("b3"), null)
+    assert.throws(() => formatMessageRef(0))
 })

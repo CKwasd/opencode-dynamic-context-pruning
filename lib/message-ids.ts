@@ -1,7 +1,7 @@
 import type { SessionState, WithParts } from "./state"
 import { isIgnoredUserMessage } from "./messages/query"
 
-const MESSAGE_REF_REGEX = /^m(\d{4})$/
+const MESSAGE_REF_REGEX = /^m(\d{4,})$/
 const BLOCK_REF_REGEX = /^b([1-9]\d*)$/
 const COMPACT_MESSAGE_REGEX = /^@([1-9]\d*)@$/
 const COMPACT_BLOCK_REGEX = /^@b([1-9]\d*)@$/
@@ -11,7 +11,9 @@ export type IdFormat = "xml" | "compact"
 
 const MESSAGE_REF_WIDTH = 4
 const MESSAGE_REF_MIN_INDEX = 1
-export const MESSAGE_REF_MAX_INDEX = 9999
+// padStart(4) is a minimum width, not a cap: refs past 9999 simply grow to five
+// digits, so both formats share the same safe-integer ceiling.
+export const MESSAGE_REF_MAX_INDEX = Number.MAX_SAFE_INTEGER
 
 export type ParsedBoundaryId =
     | {
@@ -26,7 +28,7 @@ export type ParsedBoundaryId =
       }
 
 export function formatMessageRef(index: number, format: IdFormat = "xml"): string {
-    const max = format === "compact" ? Number.MAX_SAFE_INTEGER : MESSAGE_REF_MAX_INDEX
+    const max = MESSAGE_REF_MAX_INDEX
     if (!Number.isSafeInteger(index) || index < MESSAGE_REF_MIN_INDEX || index > max) {
         throw new Error(`Message ID index out of bounds: ${index}. Supported range is 1-${max}.`)
     }
@@ -52,7 +54,7 @@ export function parseMessageRef(ref: string, format: IdFormat = "xml"): number |
     if (!Number.isSafeInteger(index)) {
         return null
     }
-    const max = format === "compact" ? Number.MAX_SAFE_INTEGER : MESSAGE_REF_MAX_INDEX
+    const max = MESSAGE_REF_MAX_INDEX
     if (index < MESSAGE_REF_MIN_INDEX || index > max) {
         return null
     }
@@ -165,7 +167,7 @@ function allocateNextMessageRef(state: SessionState): string {
         ? Math.max(MESSAGE_REF_MIN_INDEX, state.messageIds.nextRef)
         : MESSAGE_REF_MIN_INDEX
 
-    const max = state.idFormat === "compact" ? Number.MAX_SAFE_INTEGER : MESSAGE_REF_MAX_INDEX
+    const max = MESSAGE_REF_MAX_INDEX
     while (candidate <= max) {
         const ref = formatMessageRef(candidate, state.idFormat)
         if (!state.messageIds.byRef.has(ref)) {
@@ -176,6 +178,6 @@ function allocateNextMessageRef(state: SessionState): string {
     }
 
     throw new Error(
-        `Message ID alias capacity exceeded. Cannot allocate more than ${formatMessageRef(max, state.idFormat)} aliases in this session.`,
+        "Message ID alias capacity exceeded: no safe integer index is left for this session.",
     )
 }
