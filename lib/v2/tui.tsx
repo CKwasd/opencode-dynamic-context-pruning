@@ -79,6 +79,23 @@ export async function setup(ctx: Plugin.Context) {
                   : String(cause)
         show(() => <StatusDialog api={api} title="DCP" eyebrow="DCP Error" message={message} />)
     }
+    // W16: DCP formats its own notification text and emits it over RPC. Until
+    // this subscription existed the server computed the report and dropped it.
+    const unsubscribe = client.events.on("notice", (event) => {
+        const { title, text, level } = event.data
+        ctx.ui.toast.show({
+            title,
+            message: text,
+            variant: level === "error" ? "error" : level === "warning" ? "warning" : "info",
+        })
+        if (level !== "info")
+            ctx.attention.notify({
+                title,
+                message: text,
+                notification: { when: "blurred" },
+            })
+    })
+
     ctx.ui.slot({
         append: "app",
         render() {
@@ -112,4 +129,6 @@ export async function setup(ctx: Plugin.Context) {
             return null
         },
     })
+
+    return unsubscribe
 }

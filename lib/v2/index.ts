@@ -33,10 +33,31 @@ import { analyzeContextTokens } from "../commands/context"
 import { buildStatsReport } from "../commands/stats"
 import { rpc } from "./rpc"
 
-// Extension point for future model-invisible V2 reports. Never use synthetic()
-// here: its text would enter the model's context, unlike V1 ignored messages.
-export async function report(logger: Logger, text: string, sessionID?: string) {
-    logger.debug("V2 report (display pending)", { sessionID, text })
+// Extension point for model-invisible V2 reports. Never use synthetic() here:
+// its text would enter the model's context, unlike V1 ignored messages.
+export interface DcpNotice {
+    title: string
+    text: string
+    level: "info" | "warning" | "error"
+    surface: "toast" | "chat"
+}
+
+type NoticeEmitter = (data: {
+    sessionID?: string
+    title: string
+    text: string
+    level: DcpNotice["level"]
+    surface: DcpNotice["surface"]
+}) => void
+
+export async function report(
+    logger: Logger,
+    notice: DcpNotice,
+    emit?: NoticeEmitter,
+    sessionID?: string,
+) {
+    logger.debug("V2 report", { sessionID, ...notice })
+    emit?.(sessionID ? { ...notice, sessionID } : notice)
 }
 
 export async function setup(ctx: Plugin.Context) {
@@ -65,6 +86,9 @@ export async function setup(ctx: Plugin.Context) {
     const sessions = new Map<string, SessionState>()
     const queues = new Map<string, Promise<unknown>>()
     const limits = new Map<string, number>()
+    // Assigned once ctx.rpc.register resolves. Reads happen through publish() so
+    // notifications raised before registration simply stay log-only.
+    let emit: NoticeEmitter | undefined
     const aliases: Record<string, string> = {
         task: "subagent",
         bash: "shell",
@@ -91,6 +115,9 @@ export async function setup(ctx: Plugin.Context) {
         return pending
     }
 
+    const publish = (sessionID: string | undefined, notice: DcpNotice) =>
+        report(logger, notice, emit, sessionID)
+
     const client = {
         session: {
             get: async ({ path }: { path: { id: string } }) => ({
@@ -103,15 +130,35 @@ export async function setup(ctx: Plugin.Context) {
                 ])
                 return { data: history(entries, session) }
             },
+            // V1 posted ignored prompts here so notifications land in the
+            // transcript without reaching the model. V2 has no equivalent and
+            // must not use synthetic(), so surface it to the user instead.
             prompt: async (input: {
                 path: { id: string }
                 body: { parts: Array<{ text: string }> }
             }) =>
-                report(logger, input.body.parts.map((part) => part.text).join("\n"), input.path.id),
+                publish(input.path.id, {
+                    title: "DCP",
+                    text: input.body.parts.map((part) => part.text).join("\n"),
+                    level: "info",
+                    surface: "chat",
+                }),
         },
         tui: {
-            showToast: async (input: { body: { message: string } }) =>
-                report(logger, input.body.message),
+            showToast: async (input: {
+                body: { title?: string; message: string; variant?: string }
+            }) =>
+                publish(undefined, {
+                    title: input.body.title ?? "DCP",
+                    text: input.body.message,
+                    level:
+                        input.body.variant === "error"
+                            ? "error"
+                            : input.body.variant === "warning"
+                              ? "warning"
+                              : "info",
+                    surface: "toast",
+                }),
         },
     }
 
@@ -319,6 +366,20 @@ export async function setup(ctx: Plugin.Context) {
                                 output,
                             )
                             state.compressPermission = permission
+                            // The V1 handler writes its report into `output.parts`;
+                            // V2 discards that, so hand it to the user instead of
+                            // dropping /dcp context|stats|sweep|manual output.
+                            const text = (output.parts as Array<{ text?: unknown }>)
+                                .map((part) => (typeof part?.text === "string" ? part.text : ""))
+                                .join("\n")
+                                .trim()
+                            if (text)
+                                publish(invocation.sessionID, {
+                                    title: "DCP",
+                                    text,
+                                    level: "info",
+                                    surface: "chat",
+                                })
                             const pending = state.pendingManualTrigger
                             if (!pending) return
                             allowed(state)
@@ -334,7 +395,7 @@ export async function setup(ctx: Plugin.Context) {
                     },
                 })
         })
-    await ctx.rpc.register(rpc, {
+    const registration = await ctx.rpc.register(rpc, {
         status: async () => ({ enabled: config.commands.enabled }),
         snapshot: ({ sessionID }) =>
             serial(sessionID, async () => {
@@ -363,8 +424,14 @@ export async function setup(ctx: Plugin.Context) {
                 return {}
             }),
     })
+    emit = (data) => {
+        void registration.events.emit("notice", data).catch((cause) => {
+            logger.debug("notice emit failed", { error: String(cause) })
+        })
+    }
     logger.info("DCP V2 initialized")
     return () => {
+        emit = undefined
         sessions.clear()
         limits.clear()
     }

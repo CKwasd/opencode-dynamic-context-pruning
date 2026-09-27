@@ -28,6 +28,17 @@ const context = z.object({
     total: z.number(),
 })
 
+// One event carries every user-facing string DCP already formats. V1 delivered
+// these through client.tui.showToast and an ignored session.prompt; V2 has
+// neither on the plugin side, so the TUI plugin renders them instead.
+const notice = z.object({
+    sessionID: z.string().optional(),
+    title: z.string(),
+    text: z.string(),
+    level: z.enum(["info", "warning", "error"]),
+    surface: z.enum(["toast", "chat"]),
+})
+
 export const rpc = {
     id: "dcp",
     methods: {
@@ -44,5 +55,5 @@ export const rpc = {
         },
         manual: { input: session.extend({ enabled: z.boolean() }), output: z.object({}) },
     },
-    events: {},
+    events: { notice: { schema: notice } },
 } as const
