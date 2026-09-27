@@ -84,6 +84,13 @@ export function getModelInfo(messages: WithParts[]): LastUserModelContext {
     }
 }
 
+// ponytail: percent limits need the host's model context window. When the host
+// does not report one, fall back to the old absolute pair instead of leaving
+// both thresholds unset (which would pin the soft nudge on and the strong
+// nudge off forever). Upgrade path: per-model override maps still win.
+const FALLBACK_MAX_CONTEXT_LIMIT = 100000
+const FALLBACK_MIN_CONTEXT_LIMIT = 50000
+
 function resolveContextTokenLimit(
     config: PluginConfig,
     state: SessionState,
@@ -100,13 +107,19 @@ function resolveContextTokenLimit(
             return limit
         }
 
-        if (!limit.endsWith("%") || state.modelContextLimit === undefined) {
+        if (!limit.endsWith("%")) {
             return undefined
         }
 
         const parsedPercent = parseFloat(limit.slice(0, -1))
         if (isNaN(parsedPercent)) {
             return undefined
+        }
+
+        if (state.modelContextLimit === undefined) {
+            return threshold === "max"
+                ? FALLBACK_MAX_CONTEXT_LIMIT
+                : FALLBACK_MIN_CONTEXT_LIMIT
         }
 
         const roundedPercent = Math.round(parsedPercent)
