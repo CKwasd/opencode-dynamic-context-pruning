@@ -75,10 +75,16 @@ export const injectCompressNudges = (
     )
 
     if (!overMinLimit) {
-        const hadTurnAnchors = state.nudges.turnNudgeAnchors.size > 0
-        const hadIterationAnchors = state.nudges.iterationNudgeAnchors.size > 0
+        const hadAnyAnchors =
+            state.nudges.contextLimitAnchors.size > 0 ||
+            state.nudges.turnNudgeAnchors.size > 0 ||
+            state.nudges.iterationNudgeAnchors.size > 0
 
-        if (hadTurnAnchors || hadIterationAnchors) {
+        // Usage can fall for reasons other than a compress call (model switch,
+        // host compaction, /dcp sweep). Leaving any anchor behind replays the
+        // nudge every turn and persists it across restarts.
+        if (hadAnyAnchors) {
+            state.nudges.contextLimitAnchors.clear()
             state.nudges.turnNudgeAnchors.clear()
             state.nudges.iterationNudgeAnchors.clear()
             anchorsChanged = true

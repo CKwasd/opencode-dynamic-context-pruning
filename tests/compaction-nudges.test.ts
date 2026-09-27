@@ -58,3 +58,60 @@ test("compaction replays existing nudges without changing the cached prefix or a
     assert.deepEqual(state.nudges, anchors)
     assert.doesNotMatch(JSON.stringify(compact.at(-1)), /NUDGE_KEEP/)
 })
+
+
+
+test("dropping back under minContextLimit clears every anchor set, not just the soft ones", () => {
+    const state = createSessionState("compact")
+    const logger = new Logger(false)
+    const config = {
+        compress: {
+            permission: "allow",
+            mode: "range",
+            minContextLimit: 50_000,
+            maxContextLimit: 100_000,
+            nudgeFrequency: 1,
+            summaryBuffer: false,
+        },
+    } as PluginConfig
+    const prompts = {
+        contextLimitNudge: "",
+        turnNudge: "",
+        iterationNudge: "",
+    } as RuntimePrompts
+    const messages = [
+        {
+            info: {
+                id: "msg_user",
+                role: "user",
+                time: { created: 1 },
+                model: { providerID: "lab", modelID: "model" },
+            },
+            parts: [{ type: "text", text: "Original question" }],
+        },
+        {
+            info: {
+                id: "msg_assistant",
+                role: "assistant",
+                time: { created: 2 },
+                model: { providerID: "lab", modelID: "model" },
+                tokens: { input: 900_000, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+            },
+            parts: [{ type: "text", text: "Done" }],
+        },
+    ] as unknown as WithParts[]
+
+    // Over both thresholds: the context-limit anchor gets populated.
+    injectCompressNudges(state, config, logger, messages, prompts)
+    assert.equal(state.nudges.contextLimitAnchors.size, 1)
+
+    // Usage falls for a reason unrelated to a compress call (model switch, host
+    // compaction, /dcp sweep). No compress tool part is involved.
+    const assistant = messages[1]!.info as { tokens: { input: number } }
+    assistant.tokens.input = 10
+    injectCompressNudges(state, config, logger, messages, prompts)
+
+    assert.equal(state.nudges.contextLimitAnchors.size, 0)
+    assert.equal(state.nudges.turnNudgeAnchors.size, 0)
+    assert.equal(state.nudges.iterationNudgeAnchors.size, 0)
+})
