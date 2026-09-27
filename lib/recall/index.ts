@@ -177,6 +177,20 @@ async function recordRetrieved(ctx: ToolContext, toolCtx: unknown, text: string)
     }
 }
 
+/**
+ * Examples in the format this session actually uses.
+ *
+ * Naming both forms invites a model to try the other one and fail: a compact
+ * session only accepts @42@, and a model shown "m0042" as an example will try
+ * it. Observed in a sandbox trial, where a model burned two calls on m0678 and
+ * m678 before reading the error.
+ */
+function refExamples(format: IdFormat, index = 42): string {
+    return format === "compact"
+        ? `@${index}@ or @b${index}@`
+        : `m${index.toString().padStart(4, "0")} or b${index}`
+}
+
 export function messageText(message: WithParts): string {
     const parts = Array.isArray(message.parts) ? message.parts : []
     const chunks: string[] = []
@@ -205,7 +219,9 @@ export function markTruncation(text: string, note: string): string {
 export function createListBlocksTool(ctx: ToolContext) {
     return tool({
         description:
-            "List this session's compression blocks: reference, topic, size, and whether the block is still active. " +
+            `List this session's compression blocks: reference (${refExamples(
+                ctx.state.idFormat,
+            )}), topic, size, and whether the block is still active. ` +
             "Use it to find out what has been compressed before asking for anything back. Read-only.",
         args: {},
         async execute(_input, toolCtx) {
@@ -237,8 +253,10 @@ export function createListBlocksTool(ctx: ToolContext) {
 export function createReadItemTool(ctx: ToolContext) {
     return tool({
         description:
-            "Read one original message by its reference, for example m0042 or @42@. " +
-            "A block reference such as b3 or @b3@ lists the messages that block covers. " +
+            `Read one original message by its reference, for example ${refExamples(
+                ctx.state.idFormat,
+            )}. ` +
+            "A block reference lists the messages that block covers. " +
             `Returns at most ${READ_ITEM_MAX_TOKENS} tokens; pass offset to continue. ` +
             "Original messages are never deleted by compression, so anything you can see a reference to is still there.",
         args: {
