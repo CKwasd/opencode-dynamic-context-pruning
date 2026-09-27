@@ -23,6 +23,16 @@ export interface Deduplication {
 }
 
 export interface CompressConfig {
+    /**
+     * Context window to assume when the host does not report one. A host that
+     * omits `model.limit.context`, or reports a wrong figure, leaves every
+     * percentage threshold unresolvable; this makes it settable instead of
+     * falling back to a fixed constant nobody can see.
+     *
+     * Ignored when the host does report a window -- the host is authoritative.
+     */
+    modelContextLimit?: number
+
     mode: CompressMode
     permission: Permission
     showCompression: boolean
@@ -131,6 +141,7 @@ export const VALID_CONFIG_KEYS = new Set([
     "compress.summaryBuffer",
     "compress.maxContextLimit",
     "compress.minContextLimit",
+    "compress.modelContextLimit",
     "compress.modelMaxLimits",
     "compress.modelMinLimits",
     "compress.nudgeFrequency",

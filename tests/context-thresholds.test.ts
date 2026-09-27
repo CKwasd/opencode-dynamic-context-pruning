@@ -26,6 +26,7 @@ function configWith(limits: Partial<PluginConfig["compress"]>): PluginConfig {
             mode: "range",
             minContextLimit: "25%",
             maxContextLimit: "80%",
+            modelContextLimit: undefined,
             nudgeFrequency: 1,
             summaryBuffer: false,
             ...limits,

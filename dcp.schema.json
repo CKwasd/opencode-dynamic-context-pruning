@@ -162,6 +162,10 @@
                     "default": true,
                     "description": "When enabled, active summary tokens extend the effective maxContextLimit used for context-limit nudges."
                 },
+                "modelContextLimit": {
+                    "type": "number",
+                    "description": "Context window to assume when the host does not report one, so percentage thresholds stay resolvable. Ignored when the host does report a window"
+                },
                 "maxContextLimit": {
                     "description": "Soft upper threshold. Above this, DCP keeps sending strong compression nudges (based on nudgeFrequency), so the model is pushed to compress. Accepts number or \"X%\" of the model context window.",
                     "default": "80%",

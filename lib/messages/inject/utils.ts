@@ -132,13 +132,17 @@ function resolveContextTokenLimit(
             return undefined
         }
 
-        if (state.modelContextLimit === undefined) {
+        // Host first, configured second, constants last. A host that reports no
+        // window would otherwise leave every percentage unresolvable and the
+        // thresholds pinned to a constant the config cannot see.
+        const window = state.modelContextLimit ?? config.compress.modelContextLimit
+        if (window === undefined || window <= 0) {
             return threshold === "max" ? FALLBACK_MAX_CONTEXT_LIMIT : FALLBACK_MIN_CONTEXT_LIMIT
         }
 
         const roundedPercent = Math.round(parsedPercent)
         const clampedPercent = Math.max(0, Math.min(100, roundedPercent))
-        const usableWindow = Math.floor(state.modelContextLimit * CONTEXT_WINDOW_HEADROOM)
+        const usableWindow = Math.floor(window * CONTEXT_WINDOW_HEADROOM)
         return Math.round((clampedPercent / 100) * usableWindow)
     }
 
