@@ -120,6 +120,15 @@ export function project(native: Message[], entries: History, session: Session) {
                     mime: part.mediaType,
                     url: typeof part.data === "string" ? part.data : "",
                 }
+            if (part.type === "reasoning")
+                // Projected so token accounting sees reasoning; restore() passes
+                // it through untouched because nothing links back to it.
+                projected = {
+                    ...base,
+                    id: `${message.id}:${index}`,
+                    type: "reasoning",
+                    text: part.text,
+                } as Part
             if (part.type === "tool-call") {
                 const result = results.get(part.id)
                 const entry = byID.get(message.id)

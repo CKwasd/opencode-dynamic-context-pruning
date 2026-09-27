@@ -153,7 +153,9 @@ export function countAllMessageTokens(msg: WithParts): number {
     const parts = Array.isArray(msg.parts) ? msg.parts : []
     const texts: string[] = []
     for (const part of parts) {
-        if (part.type === "text") {
+        // Reasoning is model-visible context: skipping it made every per-message
+        // token count (dedup, priority, compression stats) an undercount.
+        if (part.type === "text" || part.type === "reasoning") {
             texts.push(part.text)
         } else {
             texts.push(...extractToolContent(part))

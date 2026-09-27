@@ -7,6 +7,7 @@ import { assignMessageRefs } from "../lib/message-ids"
 import { injectMessageIds, prune } from "../lib/messages"
 import type { PluginConfig } from "../lib/config"
 import { Logger } from "../lib/logger"
+import { countAllMessageTokens } from "../lib/token-utils"
 
 const session = {
     id: "ses_test",
@@ -168,4 +169,36 @@ test("V2 inserts summaries after native checkpoints without an ordinary user mes
     assert.equal(restored.length, 2)
     assert.deepEqual(restored[0], native[0])
     assert.deepEqual(restored[1]?.content, [{ type: "text", text: "CHECKPOINT_SUMMARY" }])
+})
+
+test("reasoning parts are projected so token accounting can see them, and restored unchanged", () => {
+    const view = project(transcript(), entries(transcript()), session)
+
+    const assistant = view.messages.find((m) => m.info.id === "msg_assistant")
+    assert.ok(assistant, "assistant message should be projected")
+    const reasoning = assistant!.parts.find((p) => p.type === "reasoning")
+    assert.ok(reasoning, "reasoning part should be projected, not dropped")
+
+    // Token accounting must see the reasoning text, not just the tool payloads.
+    const projectedTokens = countAllMessageTokens(assistant!)
+    const withoutReasoning = countAllMessageTokens({
+        ...assistant!,
+        parts: assistant!.parts.filter((p) => p.type !== "reasoning"),
+    })
+    assert.ok(
+        projectedTokens > withoutReasoning,
+        `expected reasoning to add tokens (${projectedTokens} vs ${withoutReasoning})`,
+    )
+
+    // restore() must put the original reasoning content back verbatim.
+    const restored = view.restore()
+    const restoredAssistant = restored.find((m) => m.id === "msg_assistant")
+    const restoredReasoning = restoredAssistant?.content.find((p) => p.type === "reasoning")
+    assert.ok(restoredReasoning, "reasoning must survive restore")
+    assert.equal((restoredReasoning as { text: string }).text, "Reasoning")
+    assert.equal(
+        (restoredReasoning as { encrypted?: string }).encrypted,
+        "signed-reasoning",
+        "provider metadata on reasoning must not be rewritten",
+    )
 })
