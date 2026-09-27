@@ -123,17 +123,36 @@ export function Card(props: { theme: Theme; title: string; children: JSX.Element
     )
 }
 
-export function Metric(props: { theme: Theme; label: string; value: string; hint?: string }) {
+// One label column for every row, so the values line up. The caller passes the
+// column it wants: the panel computes one from its own width, the dialogs use
+// the default. Deriving it per component gave Metric 24 and Progress 20, which
+// never lined up.
+const LABEL_COLUMN = 24
+
+export function Metric(props: {
+    theme: Theme
+    label: string
+    value: string
+    hint?: string
+    labelWidth?: number
+}) {
     return (
         <box flexDirection="row" gap={2}>
-            <box width={24}>
+            <box width={props.labelWidth ?? LABEL_COLUMN}>
                 <text fg={props.theme.textMuted}>{props.label}</text>
             </box>
             <box flexDirection="row" gap={1} flexGrow={1}>
                 <text fg={props.theme.text}>
                     <b>{props.value}</b>
                 </text>
-                {props.hint ? <text fg={props.theme.textMuted}>{props.hint}</text> : null}
+                {/* Padding rather than gap: the gap does not separate two
+                    adjacent text renderables, which ran the unit into the
+                    value. */}
+                {props.hint ? (
+                    <box paddingLeft={1}>
+                        <text fg={props.theme.textMuted}>{props.hint}</text>
+                    </box>
+                ) : null}
             </box>
         </box>
     )
@@ -146,27 +165,30 @@ export function Progress(props: {
     total: number
     color: ThemeColor
     detail: string
+    labelWidth?: number
 }) {
-    const width = 32
-    const filled =
-        props.total > 0 ? Math.max(0, Math.round((props.value / props.total) * width)) : 0
-    const empty = Math.max(0, width - filled)
+    const ratio = props.total > 0 ? Math.min(1, Math.max(0, props.value / props.total)) : 0
     return (
         <box flexDirection="column" gap={0}>
             <box flexDirection="row" gap={2}>
-                <box width={20}>
+                <box width={props.labelWidth ?? LABEL_COLUMN}>
                     <text fg={props.theme.text}>{props.label}</text>
                 </box>
                 <box flexDirection="row" gap={1} flexGrow={1}>
                     <text fg={props.theme.text}>
                         <b>{pct(props.value, props.total)}</b>
                     </text>
-                    <text fg={props.theme.textMuted}>{props.detail}</text>
+                    <box paddingLeft={1}>
+                        <text fg={props.theme.textMuted}>{props.detail}</text>
+                    </box>
                 </box>
             </box>
-            <box flexDirection="row">
-                <text fg={props.theme[props.color]}>{"█".repeat(filled)}</text>
-                <text fg={props.theme.borderSubtle}>{"░".repeat(empty)}</text>
+            {/* The bar is grown, not measured in characters. A character count
+                cannot match a container whose width the component does not
+                know, and the mismatch is what misaligned the row above. */}
+            <box flexDirection="row" height={1}>
+                <box flexGrow={ratio} backgroundColor={props.theme[props.color]} />
+                <box flexGrow={1 - ratio} backgroundColor={props.theme.borderSubtle} />
             </box>
         </box>
     )
