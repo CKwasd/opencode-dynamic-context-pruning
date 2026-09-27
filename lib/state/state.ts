@@ -124,6 +124,8 @@ export function resetSessionState(state: SessionState): void {
     state.stats = {
         pruneTokenCounter: 0,
         totalPruneTokens: 0,
+        retrievedTokenCounter: 0,
+        totalRetrievedTokens: 0,
     }
     state.toolParameters.clear()
     state.subAgentResultCache.clear()

@@ -26,6 +26,7 @@ export function formatStatsMessage(
     sessionMessages: number,
     sessionDurationMs: number,
     allTime: AggregatedStats,
+    sessionRetrievedTokens = 0,
 ): string {
     const lines: string[] = []
 
@@ -42,10 +43,18 @@ export function formatStatsMessage(
     lines.push(`  Time:             ${formatCompressionTime(sessionDurationMs)}`)
     lines.push(`  Messages:         ${sessionMessages}`)
     lines.push(`  Tools:            ${sessionTools}`)
+    // Only when something was actually retrieved: an always-present zero
+    // reads as a measurement when it is really the absence of one.
+    if (sessionRetrievedTokens > 0) {
+        lines.push(`  Retrieved:        ~${formatTokenCount(sessionRetrievedTokens)} put back`)
+    }
     lines.push("")
     lines.push("All-time:")
     lines.push("─".repeat(60))
     lines.push(`  Tokens saved:    ~${formatTokenCount(allTime.totalTokens)}`)
+    if ((allTime.totalRetrievedTokens ?? 0) > 0) {
+        lines.push(`  Tokens retrieved: ~${formatTokenCount(allTime.totalRetrievedTokens ?? 0)}`)
+    }
     lines.push(`  Tools pruned:     ${allTime.totalTools}`)
     lines.push(`  Messages pruned:  ${allTime.totalMessages}`)
     lines.push(`  Sessions:         ${allTime.sessionCount}`)
@@ -100,6 +109,7 @@ export async function handleStatsCommand(ctx: StatsCommandContext): Promise<void
         report.sessionMessages,
         report.sessionDurationMs,
         report.allTime,
+        report.sessionRetrievedTokens,
     )
 
     const params = getCurrentParams(state, messages, logger)
@@ -154,6 +164,7 @@ export async function buildStatsReport(state: SessionState, logger: Logger) {
         sessionTools,
         sessionMessages,
         sessionDurationMs,
-        allTime,
+        sessionRetrievedTokens: state.stats.totalRetrievedTokens ?? 0,
+        allTime: { ...allTime, totalRetrievedTokens: allTime.totalRetrievedTokens ?? 0 },
     }
 }

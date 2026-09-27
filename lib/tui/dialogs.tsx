@@ -105,6 +105,12 @@ export function StatsDialog(props: { api: ViewApi; report: StatsReport; onBack: 
                 />
                 <Metric
                     theme={theme}
+                    label="Tokens retrieved"
+                    value={`~${formatTokenCount(props.report.sessionRetrievedTokens)}`}
+                    hint="put back by read_item/recall"
+                />
+                <Metric
+                    theme={theme}
                     label="Summary size"
                     value={`~${formatTokenCount(props.report.sessionSummaryTokens)}`}
                     hint="tokens"

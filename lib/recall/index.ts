@@ -3,7 +3,8 @@ import type { ToolContext } from "../compress/types"
 import type { IdFormat } from "../message-ids"
 import { formatBlockRef, parseBlockRef, formatMessageRef } from "../message-ids"
 import { formatTokenCount } from "../ui/utils"
-import { countAllMessageTokens } from "../token-utils"
+import { countAllMessageTokens, countTokens } from "../token-utils"
+import { saveSessionState } from "../state"
 import { fetchSessionMessages } from "../compress/search"
 import type { WithParts } from "../state"
 
@@ -153,6 +154,29 @@ const QUERY_STOPWORDS = new Set([
     "yours",
 ])
 
+/**
+ * Record what a retrieval put back into the context, and persist.
+ *
+ * Without this the only way to judge whether retrieval is worth having is
+ * reasoning: a single compression saves on the order of 99,000 tokens, and
+ * nothing says how much of that a search undid. The counter is the measurement.
+ */
+async function recordRetrieved(ctx: ToolContext, toolCtx: unknown, text: string): Promise<void> {
+    const sessionID = (toolCtx as { sessionID?: string }).sessionID
+    if (!sessionID) return
+    const tokens = countTokens(text)
+    if (tokens <= 0) return
+
+    const stats = ctx.state.stats
+    stats.retrievedTokenCounter = (stats.retrievedTokenCounter ?? 0) + tokens
+    stats.totalRetrievedTokens = (stats.totalRetrievedTokens ?? 0) + tokens
+    try {
+        await saveSessionState(ctx.state, ctx.logger)
+    } catch {
+        // Losing the count is not worth failing a retrieval over.
+    }
+}
+
 export function messageText(message: WithParts): string {
     const parts = Array.isArray(message.parts) ? message.parts : []
     const chunks: string[] = []
@@ -280,7 +304,7 @@ export function createReadItemTool(ctx: ToolContext) {
             const consumed = start + slice.length
             const truncated = consumed < text.length
 
-            return [
+            const output = [
                 `${ref}  (${message.info.role}, ~${formatTokenCount(countAllMessageTokens(message), true)})`,
                 truncated
                     ? markTruncation(
@@ -289,6 +313,8 @@ export function createReadItemTool(ctx: ToolContext) {
                       )
                     : slice,
             ].join("\n")
+            await recordRetrieved(ctx, toolCtx, output)
+            return output
         },
     })
 }
@@ -433,7 +459,9 @@ export function createRecallTool(ctx: ToolContext) {
             const messages = await fetchSessionMessages(ctx.client, sessionID)
             const terms = parseQueryTerms(query)
             const matches = findRecallMatches(ctx.state, query, ctx.state.idFormat, messages)
-            return renderRecallResult(matches, terms)
+            const output = renderRecallResult(matches, terms)
+            await recordRetrieved(ctx, toolCtx, output)
+            return output
         },
     })
 }

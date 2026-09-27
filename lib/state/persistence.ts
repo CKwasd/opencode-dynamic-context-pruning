@@ -232,6 +232,8 @@ function emptyPersistedState(manualMode: boolean): PersistedSessionState {
         stats: {
             pruneTokenCounter: 0,
             totalPruneTokens: 0,
+            retrievedTokenCounter: 0,
+            totalRetrievedTokens: 0,
         },
         lastUpdated: new Date().toISOString(),
     }
@@ -259,6 +261,8 @@ export async function saveManualModeSetting(
 
 export interface AggregatedStats {
     totalTokens: number
+    /** Tokens the retrieval tools put back across all sessions. */
+    totalRetrievedTokens: number
     totalTools: number
     totalMessages: number
     sessionCount: number
@@ -267,6 +271,7 @@ export interface AggregatedStats {
 export async function loadAllSessionStats(logger: Logger): Promise<AggregatedStats> {
     const result: AggregatedStats = {
         totalTokens: 0,
+        totalRetrievedTokens: 0,
         totalTools: 0,
         totalMessages: 0,
         sessionCount: 0,
@@ -289,6 +294,7 @@ export async function loadAllSessionStats(logger: Logger): Promise<AggregatedSta
 
                 if (state?.stats?.totalPruneTokens && state?.prune) {
                     result.totalTokens += state.stats.totalPruneTokens
+                    result.totalRetrievedTokens += state.stats.totalRetrievedTokens ?? 0
                     result.totalTools += state.prune.tools
                         ? Object.keys(state.prune.tools).length
                         : 0

@@ -53,6 +53,14 @@ export function DcpPanelView(props: {
                     value={formatTokenCount(stats.sessionTokens)}
                     accent="success"
                 />
+                {stats.sessionRetrievedTokens > 0 ? (
+                    <StatusPill
+                        theme={theme}
+                        label="Retrieved"
+                        value={formatTokenCount(stats.sessionRetrievedTokens)}
+                        accent="warning"
+                    />
+                ) : null}
                 <ActionRow theme={theme} title="Stats" detail="All time" onClick={props.onStats} />
             </Card>
 

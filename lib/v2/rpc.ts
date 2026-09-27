@@ -6,10 +6,12 @@ const stats = z.object({
     sessionTokens: z.number(),
     sessionSummaryTokens: z.number(),
     sessionDurationMs: z.number(),
+    sessionRetrievedTokens: z.number(),
     sessionTools: z.number(),
     sessionMessages: z.number(),
     allTime: z.object({
         totalTokens: z.number(),
+        totalRetrievedTokens: z.number(),
         totalTools: z.number(),
         totalMessages: z.number(),
         sessionCount: z.number(),

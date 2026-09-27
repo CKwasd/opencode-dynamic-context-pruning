@@ -22,6 +22,10 @@ export interface ToolParameterEntry {
 export interface SessionStats {
     pruneTokenCounter: number
     totalPruneTokens: number
+    /** Tokens the retrieval tools put back into the context. Optional so
+     * state written before the retrieval tools existed still loads. */
+    retrievedTokenCounter?: number
+    totalRetrievedTokens?: number
 }
 
 export interface PrunedMessageEntry {
