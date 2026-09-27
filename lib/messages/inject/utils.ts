@@ -91,6 +91,21 @@ export function getModelInfo(messages: WithParts[]): LastUserModelContext {
 const FALLBACK_MAX_CONTEXT_LIMIT = 100000
 const FALLBACK_MIN_CONTEXT_LIMIT = 50000
 
+/**
+ * Fraction of the advertised window that is actually usable.
+ *
+ * The window a provider advertises is not the point at which a request still
+ * succeeds: output tokens, system overhead and provider-side reservations eat
+ * into it, and a request that hits the real ceiling is rejected outright rather
+ * than compressed. Nudging against the full number therefore fires the warning
+ * too late. Codex reserves the same margin with CONFIGURED_CONTEXT_WINDOW * 95
+ * / 100.
+ *
+ * Only applied when the limit is a percentage. An absolute value is the author
+ * stating a token count, so it is used as given.
+ */
+const CONTEXT_WINDOW_HEADROOM = 0.95
+
 function resolveContextTokenLimit(
     config: PluginConfig,
     state: SessionState,
@@ -117,14 +132,13 @@ function resolveContextTokenLimit(
         }
 
         if (state.modelContextLimit === undefined) {
-            return threshold === "max"
-                ? FALLBACK_MAX_CONTEXT_LIMIT
-                : FALLBACK_MIN_CONTEXT_LIMIT
+            return threshold === "max" ? FALLBACK_MAX_CONTEXT_LIMIT : FALLBACK_MIN_CONTEXT_LIMIT
         }
 
         const roundedPercent = Math.round(parsedPercent)
         const clampedPercent = Math.max(0, Math.min(100, roundedPercent))
-        return Math.round((clampedPercent / 100) * state.modelContextLimit)
+        const usableWindow = Math.floor(state.modelContextLimit * CONTEXT_WINDOW_HEADROOM)
+        return Math.round((clampedPercent / 100) * usableWindow)
     }
 
     const modelLimits =

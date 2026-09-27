@@ -126,3 +126,68 @@ test("out-of-range percentages clamp instead of producing a broken limit", () =>
     // 150% clamps to the full window; -10% clamps to 0 so anything counts as over.
     assert.deepEqual(over, { overMaxLimit: false, overMinLimit: true })
 })
+
+// The advertised window is not the point at which a request still succeeds, so
+// a percentage resolves against a slightly smaller usable window. Codex
+// reserves the same 5% (CONFIGURED_CONTEXT_WINDOW * 95 / 100).
+const HEADROOM = 0.95
+
+test("a percent threshold resolves against the usable window, not the full one", () => {
+    const state = createSessionState("compact")
+    state.modelContextLimit = 200_000
+    const config = configWith({ minContextLimit: "50%", maxContextLimit: "50%" })
+
+    // 50% is 100k of the full window but 95k of the usable one.
+    assert.equal(100_000, Math.round(0.5 * 200_000))
+    assert.equal(95_000, Math.round(0.5 * 200_000 * HEADROOM))
+
+    // 97k sits between the two, so only the headroom version calls it over.
+    assert.deepEqual(isContextOverLimits(config, state, "lab", "m", usage(97_000)), {
+        overMaxLimit: true,
+        overMinLimit: true,
+    })
+    assert.deepEqual(isContextOverLimits(config, state, "lab", "m", usage(92_000)), {
+        overMaxLimit: false,
+        overMinLimit: false,
+    })
+})
+
+test("a 100% threshold fires before the real window is full", () => {
+    const state = createSessionState("compact")
+    state.modelContextLimit = 200_000
+    const config = configWith({ minContextLimit: "0%", maxContextLimit: "100%" })
+
+    // 195k is still inside the window the host advertises, so the request
+    // would not have been rejected -- but it is past what the plugin considers
+    // usable, so the warning goes out with room to act on it.
+    assert.ok(195_000 < 200_000)
+    assert.equal(195_000, Math.round(1.0 * 200_000 * HEADROOM) + 5_000)
+    assert.equal(isContextOverLimits(config, state, "lab", "m", usage(195_000)).overMaxLimit, true)
+    assert.equal(isContextOverLimits(config, state, "lab", "m", usage(189_000)).overMaxLimit, false)
+})
+
+test("an absolute threshold is used as given, with no headroom", () => {
+    const state = createSessionState("compact")
+    state.modelContextLimit = 200_000
+    const config = configWith({ minContextLimit: 10_000, maxContextLimit: 150_000 })
+
+    // Headroom would have moved 150k down to 142.5k; an explicit count stands.
+    assert.equal(isContextOverLimits(config, state, "lab", "m", usage(146_000)).overMaxLimit, false)
+    assert.equal(isContextOverLimits(config, state, "lab", "m", usage(151_000)).overMaxLimit, true)
+})
+
+test("per-model percent overrides get the same headroom", () => {
+    const state = createSessionState("compact")
+    state.modelContextLimit = 200_000
+    const config = configWith({ modelMaxLimits: { "lab/small": "50%" } })
+
+    // 50% is 95k with headroom, so 97k is over and 92k is not.
+    assert.equal(
+        isContextOverLimits(config, state, "lab", "small", usage(97_000)).overMaxLimit,
+        true,
+    )
+    assert.equal(
+        isContextOverLimits(config, state, "lab", "small", usage(92_000)).overMaxLimit,
+        false,
+    )
+})
