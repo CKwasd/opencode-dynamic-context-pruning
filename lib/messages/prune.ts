@@ -111,6 +111,26 @@ const pruneToolErrors = (state: SessionState, logger: Logger, messages: WithPart
     }
 }
 
+/**
+ * Block ids whose stored summary cannot stand in for the content it replaced.
+ * Covers an inactive block, a missing or non-string summary, and an empty one.
+ */
+const findUnusableSummaryBlocks = (state: SessionState): Set<number> => {
+    const unusable = new Set<number>()
+    for (const blockId of state.prune.messages.activeByAnchorMessageId.values()) {
+        const block = state.prune.messages.blocksById.get(blockId)
+        if (!block) {
+            unusable.add(blockId)
+            continue
+        }
+        const content = (block as { summary?: unknown }).summary
+        if (block.active !== true || typeof content !== "string" || content.length === 0) {
+            unusable.add(blockId)
+        }
+    }
+    return unusable
+}
+
 const filterCompressedRanges = (
     state: SessionState,
     logger: Logger,
@@ -126,6 +146,13 @@ const filterCompressedRanges = (
     }
 
     const result: WithParts[] = []
+
+    // A block whose stored summary is unusable must not have its content
+    // pruned: the model would lose the range with nothing left standing in for
+    // it. The check has to happen before the walk below, because the range's
+    // messages come *before* the anchor where the summary is injected, so by
+    // the time a bad summary is noticed their content is already dropped.
+    const unusableBlocks = findUnusableSummaryBlocks(state)
 
     for (const msg of messages) {
         const msgId = msg.info.id
@@ -184,6 +211,13 @@ const filterCompressedRanges = (
         // Skip messages that are in the prune list
         const pruneEntry = state.prune.messages.byMessageId.get(msgId)
         if (pruneEntry && pruneEntry.activeBlockIds.length > 0) {
+            // Keep the raw content when any active block covering this message
+            // has no usable summary. Losing it silently is worse than spending
+            // the tokens it was supposed to save.
+            if (pruneEntry.activeBlockIds.some((id) => unusableBlocks.has(id))) {
+                result.push(msg)
+                continue
+            }
             continue
         }
 
@@ -195,3 +229,6 @@ const filterCompressedRanges = (
     messages.length = 0
     messages.push(...result)
 }
+
+// Exposed for the regression test in tests/w27-summary-fallback.test.ts.
+export const filterCompressedRangesForTest = filterCompressedRanges
