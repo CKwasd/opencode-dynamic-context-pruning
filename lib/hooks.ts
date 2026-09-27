@@ -37,6 +37,7 @@ import {
 import { type HostPermissionSnapshot } from "./host-permissions"
 import { compressPermission, syncCompressPermissionState } from "./compress-permission"
 import { checkSession, ensureSessionInitialized, saveSessionState, syncToolCache } from "./state"
+import { refreshModifiedPaths, type ModifiedFile } from "./protected-paths"
 import { cacheSystemPromptTokens } from "./ui/utils"
 
 const INTERNAL_AGENT_SIGNATURES = [
@@ -134,6 +135,12 @@ export function createChatMessageTransformHandler(
         cacheSystemPromptTokens(state, output.messages)
         assignMessageRefs(state, output.messages)
         syncCompressionBlocks(state, logger, output.messages)
+        await refreshModifiedPaths(
+            state,
+            config,
+            logger,
+            async () => (await client.file.status()).data as ModifiedFile[],
+        )
         syncToolCache(state, config, logger, output.messages)
         buildToolIdList(state, output.messages)
         prune(state, logger, config, output.messages)

@@ -18,6 +18,7 @@ import { buildToolIdList } from "../messages/utils"
 import { saveSessionState } from "../state/persistence"
 import { isMessageCompacted } from "../state/utils"
 import { isToolProtected } from "../protected-patterns"
+import { effectiveFilePatterns } from "../protected-paths"
 import { syncToolCache } from "../state/tool-cache"
 
 export interface SweepCommandContext {
@@ -177,7 +178,7 @@ export async function handleSweepCommand(ctx: SweepCommandContext): Promise<void
                 entry.tool,
                 entry.parameters,
                 protectedTools,
-                config.protectedFilePatterns,
+                effectiveFilePatterns(state, config),
                 entry.metadata,
             )
         ) {
@@ -197,7 +198,7 @@ export async function handleSweepCommand(ctx: SweepCommandContext): Promise<void
             entry.tool,
             entry.parameters,
             protectedTools,
-            config.protectedFilePatterns,
+            effectiveFilePatterns(state, config),
             entry.metadata,
         )
     }).length

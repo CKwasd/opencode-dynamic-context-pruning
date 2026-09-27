@@ -114,11 +114,17 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Enable user-editable prompt overrides under dcp-prompts directories"
+                },
+                "protectModifiedFiles": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Treat files the git working tree reports as modified or added as protected, so work in progress is never pruned. Untracked files are not reported by the host and are therefore not covered"
                 }
             },
             "default": {
                 "allowSubAgents": false,
-                "customPrompts": false
+                "customPrompts": false,
+                "protectModifiedFiles": false
             }
         },
         "protectedFilePatterns": {

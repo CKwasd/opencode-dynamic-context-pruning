@@ -2,6 +2,7 @@ import { PluginConfig } from "../config"
 import { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
 import { isToolProtected } from "../protected-patterns"
+import { effectiveFilePatterns } from "../protected-paths"
 import { getTotalToolTokens } from "../token-utils"
 
 /**
@@ -52,7 +53,7 @@ export const deduplicate = (
                 metadata.tool,
                 metadata.parameters,
                 protectedTools,
-                config.protectedFilePatterns,
+                effectiveFilePatterns(state, config),
                 metadata.metadata,
             )
         ) {

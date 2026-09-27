@@ -64,6 +64,7 @@ export interface TurnProtection {
 export interface ExperimentalConfig {
     allowSubAgents: boolean
     customPrompts: boolean
+    protectModifiedFiles: boolean
 }
 
 export interface PluginConfig {
@@ -115,6 +116,7 @@ export const VALID_CONFIG_KEYS = new Set([
     "experimental",
     "experimental.allowSubAgents",
     "experimental.customPrompts",
+    "experimental.protectModifiedFiles",
     "protectedFilePatterns",
     "commands",
     "commands.enabled",
@@ -700,6 +702,7 @@ const defaultConfig: PluginConfig = {
     experimental: {
         allowSubAgents: false,
         customPrompts: false,
+        protectModifiedFiles: false,
     },
     protectedFilePatterns: [],
     compress: {
@@ -932,6 +935,7 @@ function mergeExperimental(
     return {
         allowSubAgents: override.allowSubAgents ?? base.allowSubAgents,
         customPrompts: override.customPrompts ?? base.customPrompts,
+        protectModifiedFiles: override.protectModifiedFiles ?? base.protectModifiedFiles,
     }
 }
 

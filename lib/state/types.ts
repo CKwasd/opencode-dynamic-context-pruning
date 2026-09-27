@@ -111,4 +111,7 @@ export interface SessionState {
     currentTurn: number
     modelContextLimit: number | undefined
     systemPromptTokens: number | undefined
+    /** Globs for files the working tree has modified; see lib/protected-paths. */
+    modifiedPathPatterns: string[]
+    modifiedPathsFetchedAt: number
 }

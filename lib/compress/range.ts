@@ -5,6 +5,7 @@ import { rangeFormat } from "../prompts/extensions/tool"
 import { formatMessageRef, formatBlockRef, type IdFormat } from "../message-ids"
 import { finalizeSession, prepareSession, type NotificationEntry } from "./pipeline"
 import { appendRetainedFilePaths } from "./file-paths"
+import { effectiveFilePatterns } from "../protected-paths"
 import {
     appendProtectedPromptInfo,
     appendProtectedTools,
@@ -135,7 +136,7 @@ export function createCompressRangeTool(ctx: ToolContext): ReturnType<typeof too
                     plan.selection,
                     searchContext,
                     ctx.config.compress.protectedTools,
-                    ctx.config.protectedFilePatterns,
+                    effectiveFilePatterns(ctx.state, ctx.config),
                 )
 
                 const completedSummary = appendMissingBlockSummaries(
