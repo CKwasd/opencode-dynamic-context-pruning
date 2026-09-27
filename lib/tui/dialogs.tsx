@@ -6,6 +6,19 @@ import { formatDuration, formatRatio } from "./format"
 import { ActionRow, Card, DcpFrame, Metric, Progress, PromptRow, StatusPill } from "./ui"
 import type { StatsReport, ViewApi } from "./types"
 
+/**
+ * Label column for a dialog row.
+ *
+ * The panel gets its width from the host; a dialog has to derive one, and the
+ * 24-character default collapses into the value on anything narrower, which
+ * reads as "Tokens saved~3.2K tokens". The dialog chrome is a guess, so this is
+ * an upper bound rather than an exact figure.
+ */
+function dialogLabelWidth(api: ViewApi): number {
+    const terminal = api.renderer.terminalWidth ?? 100
+    return Math.max(8, Math.min(24, Math.floor(terminal * 0.3) - 2))
+}
+
 export function StatusDialog(props: {
     api: ViewApi
     title: string
@@ -27,6 +40,7 @@ export function ContextDialog(props: {
     onBack: () => void
 }) {
     const theme = props.api.theme.current
+    const labelWidth = dialogLabelWidth(props.api)
     const breakdown = props.breakdown
     const total = Math.max(0, breakdown.total)
     const activePruned = breakdown.prunedToolCount + breakdown.prunedMessageCount
@@ -36,21 +50,27 @@ export function ContextDialog(props: {
             <Card theme={theme} title="Current">
                 <Metric
                     theme={theme}
+                    labelWidth={labelWidth}
                     label="Total in context"
                     value={`~${formatTokenCount(total)}`}
-                    hint="tokens"
                 />
                 <Metric
                     theme={theme}
+                    labelWidth={labelWidth}
                     label="Tools in context"
                     value={`${breakdown.toolsInContextCount}`}
                 />
-                <Metric theme={theme} label="Active pruned targets" value={`${activePruned}`} />
                 <Metric
                     theme={theme}
+                    labelWidth={labelWidth}
+                    label="Active pruned targets"
+                    value={`${activePruned}`}
+                />
+                <Metric
+                    theme={theme}
+                    labelWidth={labelWidth}
                     label="Tokens pruned"
                     value={`~${formatTokenCount(breakdown.prunedTokens)}`}
-                    hint="tokens"
                 />
             </Card>
             <Card theme={theme} title="Breakdown">
@@ -93,37 +113,51 @@ export function ContextDialog(props: {
 
 export function StatsDialog(props: { api: ViewApi; report: StatsReport; onBack: () => void }) {
     const theme = props.api.theme.current
+    const labelWidth = dialogLabelWidth(props.api)
     const ratio = formatRatio(props.report.sessionTokens, props.report.sessionSummaryTokens)
     return (
         <DcpFrame api={props.api} title="Stats" eyebrow="DCP" onBack={props.onBack}>
             <Card theme={theme} title="Session">
                 <Metric
                     theme={theme}
+                    labelWidth={labelWidth}
                     label="Tokens saved"
                     value={`~${formatTokenCount(props.report.sessionTokens)}`}
-                    hint="tokens"
                 />
                 <Metric
                     theme={theme}
+                    labelWidth={labelWidth}
                     label="Tokens retrieved"
                     value={`~${formatTokenCount(props.report.sessionRetrievedTokens)}`}
-                    hint="put back by read_item/recall"
+                    hint="put back"
                 />
                 <Metric
                     theme={theme}
+                    labelWidth={labelWidth}
                     label="Summary size"
                     value={`~${formatTokenCount(props.report.sessionSummaryTokens)}`}
-                    hint="tokens"
                 />
-                <Metric theme={theme} label="Compression ratio" value={ratio} />
                 <Metric
                     theme={theme}
+                    labelWidth={labelWidth}
+                    label="Compression ratio"
+                    value={ratio}
+                />
+                <Metric
+                    theme={theme}
+                    labelWidth={labelWidth}
                     label="Compression time"
                     value={formatDuration(props.report.sessionDurationMs)}
                 />
-                <Metric theme={theme} label="Tools pruned" value={`${props.report.sessionTools}`} />
                 <Metric
                     theme={theme}
+                    labelWidth={labelWidth}
+                    label="Tools pruned"
+                    value={`${props.report.sessionTools}`}
+                />
+                <Metric
+                    theme={theme}
+                    labelWidth={labelWidth}
                     label="Messages pruned"
                     value={`${props.report.sessionMessages}`}
                 />
@@ -131,22 +165,25 @@ export function StatsDialog(props: { api: ViewApi; report: StatsReport; onBack: 
             <Card theme={theme} title="All time">
                 <Metric
                     theme={theme}
+                    labelWidth={labelWidth}
                     label="Tokens saved"
                     value={`~${formatTokenCount(props.report.allTime.totalTokens)}`}
-                    hint="tokens"
                 />
                 <Metric
                     theme={theme}
+                    labelWidth={labelWidth}
                     label="Tools pruned"
                     value={`${props.report.allTime.totalTools}`}
                 />
                 <Metric
                     theme={theme}
+                    labelWidth={labelWidth}
                     label="Messages pruned"
                     value={`${props.report.allTime.totalMessages}`}
                 />
                 <Metric
                     theme={theme}
+                    labelWidth={labelWidth}
                     label="Sessions with DCP history"
                     value={`${props.report.allTime.sessionCount}`}
                 />

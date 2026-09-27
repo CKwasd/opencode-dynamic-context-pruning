@@ -20,7 +20,7 @@ export type Theme = Pick<
 export type ThemeColor = keyof Theme
 export type ViewApi = {
     theme: { readonly current: Theme }
-    renderer: Pick<TuiApi["renderer"], "height" | "on" | "off">
+    renderer: Pick<TuiApi["renderer"], "height" | "on" | "off" | "terminalWidth">
     ui: { dialog: { clear(): void } }
 }
 export type StatsReport = Awaited<ReturnType<typeof buildStatsReport>>
