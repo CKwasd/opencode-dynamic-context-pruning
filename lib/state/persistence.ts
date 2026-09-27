@@ -42,22 +42,27 @@ export interface PersistedSessionState {
     lastUpdated: string
 }
 
-const STORAGE_DIR = join(
-    process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"),
-    "opencode",
-    "storage",
-    "plugin",
-    "dcp",
-)
+// Resolved per call, not at module load: tests set XDG_DATA_HOME after importing
+// this module, so a module-level const would pin every run to the real home dir.
+function getStorageDir(): string {
+    return join(
+        process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"),
+        "opencode",
+        "storage",
+        "plugin",
+        "dcp",
+    )
+}
 
 async function ensureStorageDir(): Promise<void> {
-    if (!existsSync(STORAGE_DIR)) {
-        await fs.mkdir(STORAGE_DIR, { recursive: true })
+    const dir = getStorageDir()
+    if (!existsSync(dir)) {
+        await fs.mkdir(dir, { recursive: true })
     }
 }
 
 function getSessionFilePath(sessionId: string): string {
-    return join(STORAGE_DIR, `${sessionId}.json`)
+    return join(getStorageDir(), `${sessionId}.json`)
 }
 
 async function writePersistedSessionState(
@@ -268,16 +273,17 @@ export async function loadAllSessionStats(logger: Logger): Promise<AggregatedSta
     }
 
     try {
-        if (!existsSync(STORAGE_DIR)) {
+        const storageDir = getStorageDir()
+        if (!existsSync(storageDir)) {
             return result
         }
 
-        const files = await fs.readdir(STORAGE_DIR)
+        const files = await fs.readdir(storageDir)
         const jsonFiles = files.filter((f) => f.endsWith(".json"))
 
         for (const file of jsonFiles) {
             try {
-                const filePath = join(STORAGE_DIR, file)
+                const filePath = join(storageDir, file)
                 const content = await fs.readFile(filePath, "utf-8")
                 const state = JSON.parse(content) as PersistedSessionState
 

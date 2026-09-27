@@ -713,11 +713,19 @@ const defaultConfig: PluginConfig = {
     },
 }
 
-const GLOBAL_CONFIG_DIR = process.env.XDG_CONFIG_HOME
-    ? join(process.env.XDG_CONFIG_HOME, "opencode")
-    : join(homedir(), ".config", "opencode")
-const GLOBAL_CONFIG_PATH_JSONC = join(GLOBAL_CONFIG_DIR, "dcp.jsonc")
-const GLOBAL_CONFIG_PATH_JSON = join(GLOBAL_CONFIG_DIR, "dcp.json")
+// Resolved per call, not at module load: tests set XDG_CONFIG_HOME after importing
+// this module, so a module-level const would pin every run to the real home dir.
+function getGlobalConfigDir(): string {
+    return process.env.XDG_CONFIG_HOME
+        ? join(process.env.XDG_CONFIG_HOME, "opencode")
+        : join(homedir(), ".config", "opencode")
+}
+function getGlobalConfigPathJsonc(): string {
+    return join(getGlobalConfigDir(), "dcp.jsonc")
+}
+function getGlobalConfigPathJson(): string {
+    return join(getGlobalConfigDir(), "dcp.json")
+}
 
 function findOpencodeDir(startDir: string): string | null {
     let current = startDir
@@ -740,10 +748,12 @@ function getConfigPaths(ctx?: ConfigContext): {
     configDir: string | null
     project: string | null
 } {
-    const global = existsSync(GLOBAL_CONFIG_PATH_JSONC)
-        ? GLOBAL_CONFIG_PATH_JSONC
-        : existsSync(GLOBAL_CONFIG_PATH_JSON)
-          ? GLOBAL_CONFIG_PATH_JSON
+    const globalJsonc = getGlobalConfigPathJsonc()
+    const globalJson = getGlobalConfigPathJson()
+    const global = existsSync(globalJsonc)
+        ? globalJsonc
+        : existsSync(globalJson)
+          ? globalJson
           : null
 
     let configDir: string | null = null
@@ -776,15 +786,16 @@ function getConfigPaths(ctx?: ConfigContext): {
 }
 
 function createDefaultConfig(): void {
-    if (!existsSync(GLOBAL_CONFIG_DIR)) {
-        mkdirSync(GLOBAL_CONFIG_DIR, { recursive: true })
+    const dir = getGlobalConfigDir()
+    if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true })
     }
 
     const configContent = `{
   "$schema": "https://raw.githubusercontent.com/Opencode-DCP/opencode-dynamic-context-pruning/master/dcp.schema.json"
 }
 `
-    writeFileSync(GLOBAL_CONFIG_PATH_JSONC, configContent, "utf-8")
+    writeFileSync(join(dir, "dcp.jsonc"), configContent, "utf-8")
 }
 
 interface ConfigLoadResult {
