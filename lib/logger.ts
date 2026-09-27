@@ -33,8 +33,15 @@ export class Logger {
                     `${key}=[${value.slice(0, 3).join(",")}${value.length > 3 ? `...+${value.length - 3}` : ""}]`,
                 )
             } else if (typeof value === "object") {
-                const str = JSON.stringify(value)
-                if (str.length < 50) {
+                // stringify returns undefined for a toJSON() of undefined, and
+                // throws on cycles. Neither may cost us the whole log line.
+                let str: string | undefined
+                try {
+                    str = JSON.stringify(value)
+                } catch {
+                    str = undefined
+                }
+                if (str !== undefined && str.length < 50) {
                     parts.push(`${key}=${str}`)
                 }
             } else {
@@ -67,25 +74,53 @@ export class Logger {
         }
     }
 
-    private async write(level: string, component: string, message: string, data?: any) {
-        if (!this.enabled) return
+    // Appends are serialized through this chain: callers do not await info/debug,
+    // so concurrent O_APPEND writes interleave and tear lines apart.
+    private writeQueue: Promise<void> = Promise.resolve()
 
-        try {
-            await this.ensureLogDir()
+    private write(level: string, component: string, message: string, data?: any) {
+        if (!this.enabled) return Promise.resolve()
 
-            const timestamp = new Date().toISOString()
-            const dataStr = this.formatData(data)
+        const run = async () => {
+            const logLine = await this.buildLine(level, component, message, data)
+            if (logLine === undefined) return
 
-            const logLine = `${timestamp} ${level.padEnd(5)} ${component}: ${message}${dataStr ? " | " + dataStr : ""}\n`
-
-            const dailyLogDir = join(this.logDir, "daily")
-            if (!existsSync(dailyLogDir)) {
-                await mkdir(dailyLogDir, { recursive: true })
+            const logFile = this.currentLogFile()
+            if (!existsSync(this.dailyLogDir)) {
+                await mkdir(this.dailyLogDir, { recursive: true })
             }
 
-            const logFile = join(dailyLogDir, `${new Date().toISOString().split("T")[0]}.log`)
             await writeFile(logFile, logLine, { flag: "a" })
-        } catch (error) {}
+        }
+
+        this.writeQueue = this.writeQueue.then(run, run)
+        return this.writeQueue
+    }
+
+    private get dailyLogDir(): string {
+        return join(this.logDir, "daily")
+    }
+
+    private currentLogFile(): string {
+        return join(this.dailyLogDir, `${new Date().toISOString().split("T")[0]}.log`)
+    }
+
+    private async buildLine(
+        level: string,
+        component: string,
+        message: string,
+        data?: any,
+    ): Promise<string | undefined> {
+        try {
+            await this.ensureLogDir()
+            const timestamp = new Date().toISOString()
+            const dataStr = this.formatData(data)
+            return `${timestamp} ${level.padEnd(5)} ${component}: ${message}${dataStr ? " | " + dataStr : ""}\n`
+        } catch (error) {
+            // A line we cannot build is a bug, not a reason to lose the log silently.
+            console.error(`DCP logger: failed to format line for ${component}: ${message}`, error)
+            return undefined
+        }
     }
 
     info(message: string, data?: any) {
