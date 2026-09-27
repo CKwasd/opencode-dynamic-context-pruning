@@ -247,6 +247,11 @@
                     "type": "boolean",
                     "default": false,
                     "description": "When enabled, your messages are never lost during compression"
+                },
+                "retainFilePaths": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Append files read more than once in the range that the summary does not name. Guarantees the list survives without relying on the model to volunteer it"
                 }
             },
             "default": {
@@ -261,7 +266,8 @@
                 "nudgeForce": "soft",
                 "protectedTools": [],
                 "protectTags": false,
-                "protectUserMessages": false
+                "protectUserMessages": false,
+                "retainFilePaths": true
             }
         },
         "strategies": {

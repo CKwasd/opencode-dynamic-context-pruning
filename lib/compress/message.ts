@@ -6,6 +6,7 @@ import { formatMessageRef, type IdFormat } from "../message-ids"
 import { formatIssues, formatResult, resolveMessages, validateArgs } from "./message-utils"
 import { finalizeSession, prepareSession, type NotificationEntry } from "./pipeline"
 import { appendProtectedPromptInfo, appendProtectedTools } from "./protected-content"
+import { appendRetainedFilePaths } from "./file-paths"
 import {
     allocateBlockId,
     allocateRunId,
@@ -99,9 +100,13 @@ export function createCompressMessageTool(ctx: ToolContext): ReturnType<typeof t
                     ctx.config.protectedFilePatterns,
                 )
 
+                const finalSummary = ctx.config.compress.retainFilePaths
+                    ? appendRetainedFilePaths(summaryWithTools, plan.selection, searchContext)
+                    : summaryWithTools
+
                 preparedPlans.push({
                     plan,
-                    summaryWithTools,
+                    summaryWithTools: finalSummary,
                 })
             }
 

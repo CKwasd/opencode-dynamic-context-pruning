@@ -4,6 +4,7 @@ import { countTokens } from "../token-utils"
 import { rangeFormat } from "../prompts/extensions/tool"
 import { formatMessageRef, formatBlockRef, type IdFormat } from "../message-ids"
 import { finalizeSession, prepareSession, type NotificationEntry } from "./pipeline"
+import { appendRetainedFilePaths } from "./file-paths"
 import {
     appendProtectedPromptInfo,
     appendProtectedTools,
@@ -145,11 +146,19 @@ export function createCompressRangeTool(ctx: ToolContext): ReturnType<typeof too
                     ctx.state.idFormat,
                 )
 
+                const withFilePaths = ctx.config.compress.retainFilePaths
+                    ? appendRetainedFilePaths(
+                          completedSummary.expandedSummary,
+                          plan.selection,
+                          searchContext,
+                      )
+                    : completedSummary.expandedSummary
+
                 preparedPlans.push({
                     entry: plan.entry,
                     selection: plan.selection,
                     anchorMessageId: plan.anchorMessageId,
-                    finalSummary: completedSummary.expandedSummary,
+                    finalSummary: withFilePaths,
                     consumedBlockIds: completedSummary.consumedBlockIds,
                 })
             }
