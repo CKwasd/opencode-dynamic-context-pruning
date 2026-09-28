@@ -7,6 +7,7 @@ import { formatIssues, formatResult, resolveMessages, validateArgs } from "./mes
 import { finalizeSession, prepareSession, type NotificationEntry } from "./pipeline"
 import { appendProtectedPromptInfo, appendProtectedTools } from "./protected-content"
 import { appendRetainedFilePaths } from "./file-paths"
+import { normalizeCompressMessageInput } from "./normalize-input"
 import { effectiveFilePatterns } from "../protected-paths"
 import {
     allocateBlockId,
@@ -51,7 +52,7 @@ export function createCompressMessageTool(ctx: ToolContext): ReturnType<typeof t
         description: runtimePrompts.compressMessage + messageFormat(ctx.state.idFormat),
         args: buildSchema(ctx.state.idFormat),
         async execute(args, toolCtx) {
-            const input = args as CompressMessageToolArgs
+            const input = normalizeCompressMessageInput(args)
             validateArgs(input)
             const callId =
                 typeof (toolCtx as unknown as { callID?: unknown }).callID === "string"

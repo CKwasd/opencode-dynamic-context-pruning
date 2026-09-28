@@ -5,6 +5,7 @@ import { rangeFormat } from "../prompts/extensions/tool"
 import { formatMessageRef, formatBlockRef, type IdFormat } from "../message-ids"
 import { finalizeSession, prepareSession, type NotificationEntry } from "./pipeline"
 import { appendRetainedFilePaths } from "./file-paths"
+import { normalizeCompressInput } from "./normalize-input"
 import { effectiveFilePatterns } from "../protected-paths"
 import {
     appendProtectedPromptInfo,
@@ -66,7 +67,9 @@ export function createCompressRangeTool(ctx: ToolContext): ReturnType<typeof too
         description: runtimePrompts.compressRange + rangeFormat(ctx.state.idFormat),
         args: buildSchema(ctx.state.idFormat),
         async execute(args, toolCtx) {
-            const input = args as CompressRangeToolArgs
+            // Shape slips are common enough on retry to be worth rescuing;
+            // see normalizeCompressInput.
+            const input = normalizeCompressInput(args)
             validateArgs(input)
             const callId =
                 typeof (toolCtx as unknown as { callID?: unknown }).callID === "string"
