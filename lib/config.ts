@@ -107,6 +107,14 @@ export interface ExperimentalConfig {
     allowSubAgents: boolean
     customPrompts: boolean
     protectModifiedFiles: boolean
+    /**
+     * Shape of the message and block references DCP injects.
+     *
+     * "xml" is m0042 / b1 inside metadata tags. "compact" is the bare @4@ /
+     * @b1@ form, which reads as an @mention to a harness that resolves them.
+     * OpenCode V2 uses compact; V1 uses xml.
+     */
+    messageIdFormat: "xml" | "compact"
 }
 
 export interface PluginConfig {
@@ -160,6 +168,7 @@ export const VALID_CONFIG_KEYS = new Set([
     "experimental.allowSubAgents",
     "experimental.customPrompts",
     "experimental.protectModifiedFiles",
+    "experimental.messageIdFormat",
     "protectedFilePatterns",
     "recall",
     "recall.maxSearchResults",
@@ -754,6 +763,7 @@ const defaultConfig: PluginConfig = {
         allowSubAgents: false,
         customPrompts: false,
         protectModifiedFiles: false,
+        messageIdFormat: "compact",
     },
     protectedFilePatterns: [],
     recall: { ...DEFAULT_RECALL },
@@ -1003,6 +1013,7 @@ function mergeExperimental(
         allowSubAgents: override.allowSubAgents ?? base.allowSubAgents,
         customPrompts: override.customPrompts ?? base.customPrompts,
         protectModifiedFiles: override.protectModifiedFiles ?? base.protectModifiedFiles,
+        messageIdFormat: override.messageIdFormat ?? base.messageIdFormat,
     }
 }
 

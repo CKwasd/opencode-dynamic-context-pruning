@@ -71,6 +71,9 @@ export async function setup(ctx: Plugin.Context) {
         },
     }
     const config = getConfig({ directory: ctx.location.directory, client: warnings })
+    // Read once: the three createSessionState() calls below each used the
+    // literal, so the reference format had no single place to change.
+    const idFormat = config.experimental.messageIdFormat
     if (!config.enabled) {
         await ctx.rpc.register(
             { ...rpc, methods: { status: rpc.methods.status } },
@@ -177,7 +180,7 @@ export async function setup(ctx: Plugin.Context) {
         const { data: agent } = await ctx.agent.get({ agentID: selected })
         let state = sessions.get(sessionID)
         if (!state) {
-            state = createSessionState("compact")
+            state = createSessionState(idFormat)
             sessions.set(sessionID, state)
         }
         const messages = history(entries, session)
@@ -310,7 +313,7 @@ export async function setup(ctx: Plugin.Context) {
             (config.compress.mode === "message"
                 ? createCompressMessageTool
                 : createCompressRangeTool)({ client, state, logger, config, prompts })
-        const definition = define(createSessionState("compact"))
+        const definition = define(createSessionState(idFormat))
         await ctx.tool.transform((editor) =>
             editor.add({
                 name: "compress",
@@ -360,7 +363,7 @@ export async function setup(ctx: Plugin.Context) {
             // is rebuilt per call against the session's live state, the same way
             // the compress tool above does it.
             const specs = Object.entries(factories).map(([name, make]) => {
-                const proto = make(retrievalContext(createSessionState("compact")))
+                const proto = make(retrievalContext(createSessionState(idFormat)))
                 return { name, make, description: proto.description, args: proto.args }
             })
 

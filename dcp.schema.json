@@ -119,12 +119,19 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Treat files the git working tree reports as modified or added as protected, so work in progress is never pruned. Untracked files are not reported by the host and are therefore not covered"
+                },
+                "messageIdFormat": {
+                    "type": "string",
+                    "enum": ["xml", "compact"],
+                    "default": "compact",
+                    "description": "Shape of the message and block references DCP injects. xml is m0042 / b1 inside metadata tags; compact is the bare @4@ / @b1@ form, which reads as an @mention to a harness that resolves them. References from a session started under one format will not parse under the other"
                 }
             },
             "default": {
                 "allowSubAgents": false,
                 "customPrompts": false,
-                "protectModifiedFiles": false
+                "protectModifiedFiles": false,
+                "messageIdFormat": "compact"
             }
         },
         "protectedFilePatterns": {
