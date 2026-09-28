@@ -395,7 +395,17 @@ export function createReadItemTool(ctx: ToolContext) {
             const output = parts.join("\n")
             const tokens = countTokens(output)
             if (tokens > limits.resultTokenBudget) {
-                return `Refusing: ~${tokens} tokens exceeds the ${limits.resultTokenBudget} token limit for one read_item call. Read fewer references at once, or lower the cap with the limit argument.`
+                // Say what to set, not just that it is too big. The budget is per
+                // call and the limit is per reference, so the split is knowable
+                // and a model that only has to copy a number gets there in one
+                // try instead of halving its way down.
+                const perRef = Math.max(1, Math.floor(limits.resultTokenBudget / wanted.length))
+                return [
+                    `Refusing: ~${tokens} tokens exceeds the ${limits.resultTokenBudget} token limit for one read_item call.`,
+                    `Read ${wanted.length} reference(s) at about ${perRef} tokens each:`,
+                    `  read_item with refs: [${wanted.map((r) => `"${r}"`).join(", ")}] and limit: ${perRef}.`,
+                    "To page through the rest of a message, add offset to resume where the last one stopped.",
+                ].join("\n")
             }
             // A call that only reported errors retrieved nothing, and the counter
             // exists to measure what came back.

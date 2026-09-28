@@ -125,6 +125,11 @@ test("a call over the result budget is refused, not shortened", async () => {
     assert.match(out, /Refusing/)
     assert.match(out, /exceeds the 200 token limit/)
     assert.doesNotMatch(out, /aaaa/)
+    // It has to say what to set: a model that only has to copy a number should
+    // not have to halve its way down.
+    assert.match(out, /limit: 100/)
+    assert.match(out, /"m0001", "m0002"/)
+    assert.match(out, /offset/)
 })
 
 test("one bad reference does not sink the good ones", async () => {
