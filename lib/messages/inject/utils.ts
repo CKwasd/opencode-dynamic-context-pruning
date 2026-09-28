@@ -164,9 +164,17 @@ function resolveContextTokenLimit(
 export interface ContextThresholds {
     /** Tokens the last assistant message reported for the whole request. */
     currentTokens: number
-    /** Where the strong nudge starts: maxContextLimit plus the summary buffer. */
+    /**
+     * The model's real window, for anything shown to the model. Active
+     * summaries are already inside the usage the host reports, so adding
+     * summaryBuffer here would advertise headroom that does not exist.
+     */
+    windowLimit: number | undefined
+    /** Where the strong nudge starts: the window widened by the summary buffer. */
     maxContextLimit: number | undefined
     minContextLimit: number | undefined
+    /** Tokens the active summaries occupy inside the window. */
+    summaryTokens: number
 }
 
 /**
@@ -193,11 +201,13 @@ export function resolveContextThresholds(
     )
     return {
         currentTokens: getCurrentTokenUsage(state, messages),
+        windowLimit: resolvedMaxContextLimit,
         maxContextLimit:
             resolvedMaxContextLimit === undefined
                 ? undefined
                 : resolvedMaxContextLimit + summaryTokenExtension,
         minContextLimit: resolveContextTokenLimit(config, state, providerId, modelId, "min"),
+        summaryTokens: summaryTokenExtension,
     }
 }
 
