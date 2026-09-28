@@ -1,5 +1,5 @@
 import type { IdFormat } from "../message-ids"
-import { markerIntegrityNote } from "./guidance"
+import { markerIntegrityNote, tailBiasedGuidance } from "./guidance"
 
 export function messagePrompt(format: IdFormat = "xml"): string {
     const compact = format === "compact"
@@ -48,6 +48,8 @@ Prioritize the earliest messages in the context as they will be the least releva
 General cleanup should be done periodically between other normal compression tool passes, not as the primary form of compression.
 
 ${markerIntegrityNote()}
+
+${tailBiasedGuidance()}
 `
 }
 
