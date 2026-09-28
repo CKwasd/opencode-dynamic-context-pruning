@@ -2,7 +2,7 @@ import { tool } from "@opencode-ai/plugin"
 import type { RecallConfig } from "../config"
 import type { ToolContext } from "../compress/types"
 import type { IdFormat } from "../message-ids"
-import { formatBlockRef, parseBlockRef, formatMessageRef } from "../message-ids"
+import { formatBlockRef, parseBlockRef, formatMessageRef, parseMessageRef } from "../message-ids"
 import { formatTokenCount } from "../ui/utils"
 import { countAllMessageTokens, countTokens } from "../token-utils"
 import { saveSessionState } from "../state"
@@ -415,14 +415,56 @@ export function createReadItemTool(ctx: ToolContext) {
     })
 }
 
+interface RecallBlockSpan {
+    /** The block's own reference, e.g. "@b1@". */
+    ref: string
+    /** First and last message reference the block covers, when it covers any. */
+    first: string | undefined
+    last: string | undefined
+    messages: number
+}
+
 interface RecallMatch {
     ref: string
     role: string
     blockRefs: string[]
+    /** The same blocks with their coverage, so a range read can be aimed at one. */
+    blocks: RecallBlockSpan[]
     tokens: number
     /** How many query terms this message contains. */
     hitTerms: number
     snippet: string
+}
+
+/**
+ * The span a block covers, from the references of the messages it folded.
+ * Without it the model can see that a hit lives inside a block but not which
+ * part of it, and has to page through the whole block to find out.
+ */
+function blockSpans(state: ToolContext["state"], idFormat: IdFormat): Map<number, RecallBlockSpan> {
+    const spans = new Map<number, RecallBlockSpan>()
+    for (const block of state.prune.messages.blocksById.values()) {
+        // Refs are not fixed width in the compact format, so they cannot be
+        // sorted as text. Parse each one back to its index instead.
+        const indices: number[] = []
+        for (const messageId of block.effectiveMessageIds) {
+            const ref = state.messageIds.byRawId.get(messageId)
+            if (ref === undefined) continue
+            const index = parseMessageRef(ref, idFormat)
+            if (index !== null) indices.push(index)
+        }
+        const first =
+            indices.length > 0 ? formatMessageRef(Math.min(...indices), idFormat) : undefined
+        const last =
+            indices.length > 0 ? formatMessageRef(Math.max(...indices), idFormat) : undefined
+        spans.set(block.blockId, {
+            ref: formatBlockRef(block.blockId, idFormat),
+            first,
+            last,
+            messages: block.effectiveMessageIds.length,
+        })
+    }
+    return spans
 }
 
 /**
@@ -454,6 +496,7 @@ export function findRecallMatches(
     const terms = parseQueryTerms(query)
     if (terms.length === 0) return []
 
+    const spans = blockSpans(state, idFormat)
     const blockByMessageId = new Map<string, number[]>()
     for (const block of state.prune.messages.blocksById.values()) {
         for (const messageId of block.effectiveMessageIds) {
@@ -488,6 +531,9 @@ export function findRecallMatches(
             ref,
             role: message.info.role,
             blockRefs: blockIds.map((blockId) => formatBlockRef(blockId, idFormat)),
+            blocks: blockIds
+                .map((blockId) => spans.get(blockId))
+                .filter((span): span is RecallBlockSpan => span !== undefined),
             tokens: countAllMessageTokens(message),
             hitTerms,
             snippet:
@@ -516,7 +562,15 @@ export function renderRecallResult(matches: RecallMatch[], terms: string[] = [])
             // message index and built "m0678" out of it.
             `  ${match.ref}  ${match.role}  ~${formatTokenCount(match.tokens)}` +
                 `  (${match.hitTerms}/${terms.length || match.hitTerms} terms)` +
-                (match.blockRefs.length > 0 ? `  in ${match.blockRefs.join(", ")}` : "") +
+                (match.blocks.length > 0
+                    ? `  in ${match.blocks
+                          .map((span) =>
+                              span.first && span.last
+                                  ? `${span.ref} [${span.first}-${span.last} - ${span.messages} msgs]`
+                                  : span.ref,
+                          )
+                          .join(", ")}`
+                    : "") +
                 `\n    ${match.snippet}`,
         )
     }
