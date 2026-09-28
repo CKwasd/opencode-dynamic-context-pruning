@@ -1,4 +1,5 @@
 import type { IdFormat } from "../message-ids"
+import { markerIntegrityNote } from "./guidance"
 
 export function messagePrompt(format: IdFormat = "xml"): string {
     const compact = format === "compact"
@@ -45,6 +46,8 @@ Optimize for reducing context footprint, not for grouping messages by topic.
 Do not compress away still-active instructions, unresolved questions, or constraints that are likely to matter soon.
 Prioritize the earliest messages in the context as they will be the least relevant to the active task.
 General cleanup should be done periodically between other normal compression tool passes, not as the primary form of compression.
+
+${markerIntegrityNote()}
 `
 }
 

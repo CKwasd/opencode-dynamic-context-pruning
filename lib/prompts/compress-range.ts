@@ -1,4 +1,5 @@
 import type { IdFormat } from "../message-ids"
+import { markerIntegrityNote } from "./guidance"
 
 export function rangePrompt(format: IdFormat = "xml"): string {
     const compact = format === "compact"
@@ -64,6 +65,8 @@ Rules:
 
 BATCHING
 When multiple independent ranges are ready and their boundaries do not overlap, include all of them as separate entries in the \`content\` array of a single tool call. Each entry should have its own \`startId\`, \`endId\`, and \`summary\`.
+
+${markerIntegrityNote()}
 `
 }
 
