@@ -68,6 +68,12 @@ export function formatStatsMessage(
             lines.push(
                 `  block ${fold.blockId}: ${sign}${formatTokenCount(Math.abs(net))} over ${fold.turns} turn(s)${hit}`,
             )
+            // The prompt sizes, so the number can be checked rather than taken
+            // on trust. This is a comparison of averages, not a claim about
+            // what caused the difference.
+            lines.push(
+                `           prompt/turn ${formatTokenCount(fold.avgBefore)} -> ${formatTokenCount(fold.avgAfter)}`,
+            )
         }
         const netTotal = foldEconomics.reduce((total, fold) => total + fold.netSaved, 0)
         lines.push(

@@ -4,8 +4,9 @@ import {
     detectNewFolds,
     pushBounded,
     readCacheSample,
-    settleFold,
+    samplesBefore,
     samplesBetween,
+    settleFold,
 } from "./cache-ledger"
 import type { SessionState, WithParts } from "./state"
 
@@ -14,22 +15,20 @@ import type { SessionState, WithParts } from "./state"
  * counters off the newest assistant message and compares one high-water mark.
  * No subscription, no walking the conversation.
  *
- * A fold is settled when the *next* fold appears, because until then we do not
- * know how long the cache took to recover, and that window is the whole cost.
+ * A fold is settled when the *next* one appears, because until then we do not
+ * know how long the request size stayed changed, and that window is the whole
+ * measurement.
  */
 export function recordCacheEconomics(state: SessionState, messages: WithParts[]): void {
     const newFolds = detectNewFolds(state, state.cacheLedgerSeenBlockId)
 
     if (newFolds.length > 0) {
-        // Close out the previous fold over the window that just ended.
-        if (state.cacheLedgerSeenBlockId > 0) {
-            const previous = state.prune.messages.blocksById.get(state.cacheLedgerSeenBlockId)
+        const previousId = state.cacheLedgerSeenBlockId
+        if (previousId > 0) {
+            const previous = state.prune.messages.blocksById.get(previousId)
             if (previous) {
-                const window = samplesBetween(
-                    state.cacheSamples,
-                    state.cacheLedgerSeenBlockId,
-                    newFolds[0]!.blockId,
-                )
+                const window = samplesBetween(state.cacheSamples, previousId, newFolds[0]!.blockId)
+                const before = samplesBefore(state.cacheSamples, previousId)
                 state.foldEconomics = pushBounded(
                     state.foldEconomics,
                     settleFold(
@@ -40,6 +39,7 @@ export function recordCacheEconomics(state: SessionState, messages: WithParts[])
                             topic: previous.topic,
                         },
                         window,
+                        before,
                     ),
                     MAX_FOLDS,
                 )

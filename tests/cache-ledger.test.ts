@@ -1,6 +1,13 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { detectNewFolds, readCacheSample, settleFold, samplesBetween } from "../lib/cache-ledger"
+import {
+    CONTEXT_WINDOW,
+    detectNewFolds,
+    readCacheSample,
+    samplesBefore,
+    samplesBetween,
+    settleFold,
+} from "../lib/cache-ledger"
 import { recordCacheEconomics } from "../lib/cache-observe"
 import { createSessionState, type SessionState, type WithParts } from "../lib/state"
 import { formatStatsMessage } from "../lib/commands/stats"
@@ -44,44 +51,52 @@ function withBlock(id: number, compressed: number, summary: number): SessionStat
     return state
 }
 
+function addBlock(state: SessionState, id: number, compressed: number, summary: number): void {
+    state.prune.messages.blocksById.set(id, {
+        ...state.prune.messages.blocksById.get(1)!,
+        blockId: id,
+        compressedTokens: compressed,
+        summaryTokens: summary,
+    })
+}
+
 test("a message with no reported usage yields no sample", () => {
     assert.equal(readCacheSample([], 0), undefined)
-    const state = withBlock(1, 100, 10)
     assert.equal(readCacheSample([assistant("a", 0, 0, 0)], 0), undefined)
-    assert.ok(state)
 })
 
-test("the newest assistant message with usage is the sample", () => {
-    const sample = readCacheSample([assistant("a", 8000, 4000), assistant("b", 9000, 8500)], 3)
+test("cache read is added to input, not subtracted from it", () => {
+    // The host reports them as separate contributions: 83% of turns in this
+    // project's own history report more cache.read than input, and DCP's
+    // getCurrentTokenUsage adds them. Treating read as a subset produced
+    // hit rates over 100% and a negative miss.
+    const sample = readCacheSample([assistant("a", 149, 8832)], 3)
     assert.ok(sample)
-    assert.equal(sample.input, 9000)
-    assert.equal(sample.cached, 8500)
-    assert.equal(sample.miss, 500)
-    assert.equal(sample.lastBlockId, 3)
-    assert.ok(Math.abs(sample.hitPct - 8500 / 9000) < 1e-9)
+    assert.equal(sample.fresh, 149)
+    assert.equal(sample.cached, 8832)
+    assert.equal(sample.total, 8981)
+    assert.ok(Math.abs(sample.hitPct - 8832 / 8981) < 1e-9)
+    assert.ok(sample.hitPct <= 1, "a hit rate cannot exceed the prompt")
 })
 
-test("miss is clamped at zero rather than going negative", () => {
-    // Some providers report cache.read above input when a prefix is shared
-    // across requests. A negative miss would silently inflate the savings.
-    const sample = readCacheSample([assistant("a", 100, 250)], 0)
+test("cache writes count as fresh tokens", () => {
+    const message = assistant("a", 100, 900)
+    ;(message.info as unknown as Record<string, unknown>).tokens = {
+        input: 100,
+        output: 50,
+        reasoning: 0,
+        cache: { read: 900, write: 40 },
+    }
+    const sample = readCacheSample([message], 0)
     assert.ok(sample)
-    assert.equal(sample.miss, 0)
+    assert.equal(sample.fresh, 140)
+    assert.equal(sample.total, 1040)
 })
 
 test("folds are found by the high-water mark, not by an event", () => {
     const state = withBlock(1, 100, 10)
-    for (const [id, compressed, summary] of [
-        [2, 200, 20],
-        [3, 300, 30],
-    ] as const) {
-        state.prune.messages.blocksById.set(id, {
-            ...state.prune.messages.blocksById.get(1)!,
-            blockId: id,
-            compressedTokens: compressed,
-            summaryTokens: summary,
-        })
-    }
+    addBlock(state, 2, 200, 20)
+    addBlock(state, 3, 300, 30)
     const found = detectNewFolds(state, 1)
     assert.deepEqual(
         found.map((fold) => fold.blockId),
@@ -89,80 +104,104 @@ test("folds are found by the high-water mark, not by an event", () => {
     )
 })
 
-test("a fold's window is the turns up to the next fold", () => {
-    const samples = [
-        { at: 1, input: 100, cached: 90, output: 1, miss: 10, hitPct: 0.9, lastBlockId: 1 },
-        { at: 2, input: 100, cached: 20, output: 1, miss: 80, hitPct: 0.2, lastBlockId: 1 },
-        { at: 3, input: 100, cached: 95, output: 1, miss: 5, hitPct: 0.95, lastBlockId: 1 },
-        { at: 4, input: 100, cached: 50, output: 1, miss: 50, hitPct: 0.5, lastBlockId: 2 },
-    ]
-    const window = samplesBetween(samples, 1, 2)
-    assert.equal(window.length, 3, "the sample at block 2 belongs to the next fold")
-    assert.equal(window[0]!.at, 1)
-    assert.equal(window[2]!.at, 3)
+test("the window and the before-window are separated by the fold", () => {
+    const sample = (blockId: number, total: number) => ({
+        at: blockId,
+        fresh: 10,
+        cached: total - 10,
+        total,
+        hitPct: (total - 10) / total,
+        lastBlockId: blockId,
+    })
+    const samples = [sample(1, 1000), sample(1, 1000), sample(2, 400), sample(2, 400)]
+
+    assert.equal(samplesBefore(samples, 2).length, 2, "the two before block 2")
+    assert.equal(samplesBetween(samples, 2, -1).length, 2, "the two at block 2")
+    assert.equal(samplesBetween(samples, 1, 2).length, 2)
 })
 
-test("net saved is context kept out minus cache repaid", () => {
-    // Two turns, 2000 tokens removed, 400 spent on the summary, 600 repaid to
-    // the provider: 2 * 1600 - 600 = 2600.
-    const samples = [
-        { at: 1, input: 3000, cached: 2400, output: 1, miss: 600, hitPct: 0.8, lastBlockId: 1 },
-        { at: 2, input: 3000, cached: 3000, output: 1, miss: 0, hitPct: 1, lastBlockId: 1 },
-    ]
-    const fold = settleFold({ blockId: 1, compressed: 2000, summary: 400, topic: "work" }, samples)
-    assert.equal(fold.turns, 2)
-    assert.equal(fold.repaid, 600)
-    assert.equal(fold.firstHitPct, 0.8)
-    assert.equal(fold.netSaved, 2 * 1600 - 600)
-})
-
-test("a fold that costs more than it saves reports a negative net", () => {
-    // The number this exists to produce. A fold can remove a lot of context and
-    // still be a loss if it invalidates the prefix for many turns.
-    // A small fold that still knocks the prefix cache out for several turns:
-    // 50 tokens kept out per turn against 1000 re-processed per turn.
-    const samples = Array.from({ length: 6 }, () => ({
+test("a fold that shrinks the prompt reports a positive net", () => {
+    // Before: 5000 prompt per request. After: 2000. Over 4 requests that is
+    // 3000 x 4.
+    const sample = (total: number) => ({
         at: 1,
-        input: 1000,
-        cached: 0,
-        output: 1,
-        miss: 1000,
-        hitPct: 0,
+        fresh: 100,
+        cached: total - 100,
+        total,
+        hitPct: 0.9,
         lastBlockId: 1,
-    }))
-    const fold = settleFold({ blockId: 1, compressed: 150, summary: 100, topic: "small" }, samples)
+    })
+    const before = [sample(5000), sample(5000), sample(5000), sample(5000)]
+    const after = [sample(2000), sample(2000), sample(2000), sample(2000)]
+
+    const fold = settleFold(
+        { blockId: 1, compressed: 2000, summary: 400, topic: "work" },
+        after,
+        before,
+    )
+    assert.equal(fold.avgBefore, 5000)
+    assert.equal(fold.avgAfter, 2000)
+    assert.equal(fold.deltaPerTurn, 3000)
+    assert.equal(fold.netSaved, 12000)
+    assert.equal(fold.turns, 4)
+})
+
+test("a fold that does not shrink the prompt reports a negative net", () => {
+    const sample = (total: number) => ({
+        at: 1,
+        fresh: 100,
+        cached: total - 100,
+        total,
+        hitPct: 0.5,
+        lastBlockId: 1,
+    })
+    const fold = settleFold(
+        { blockId: 1, compressed: 150, summary: 100, topic: "small" },
+        [sample(9000), sample(9000)],
+        [sample(7000), sample(7000)],
+    )
     assert.ok(fold.netSaved < 0, `expected a loss, got ${fold.netSaved}`)
-    assert.equal(fold.netSaved, 6 * 50 - 6000)
+    assert.equal(fold.netSaved, -4000)
+})
+
+test("the before window is capped so one busy stretch cannot dominate it", () => {
+    assert.ok(CONTEXT_WINDOW > 0 && CONTEXT_WINDOW <= 32)
+    const sample = (total: number) => ({
+        at: 1,
+        fresh: 1,
+        cached: total - 1,
+        total,
+        hitPct: 0.5,
+        lastBlockId: 1,
+    })
+    const long = Array.from({ length: CONTEXT_WINDOW * 3 }, () => sample(100))
+    const fold = settleFold(
+        { blockId: 1, compressed: 10, summary: 1, topic: "t" },
+        [sample(50)],
+        long,
+    )
+    // The average over the whole run and over the last CONTEXT_WINDOW are the
+    // same here, which is the point: the older samples are not what is read.
+    assert.equal(fold.avgBefore, 100)
 })
 
 test("a fold is settled only once the next one opens", () => {
     const state = withBlock(1, 2000, 400)
-    // Turn 1: block 1 exists, so the first observation attributes to it.
-    recordCacheEconomics(state, [assistant("a", 3000, 2400)])
+    recordCacheEconomics(state, [assistant("a", 3000, 2000)])
     assert.equal(state.cacheLedgerSeenBlockId, 1)
-    assert.equal(state.foldEconomics.length, 0, "nothing to settle yet")
+    assert.equal(state.foldEconomics.length, 0, "its window is still open")
 
-    // Turn 2: still block 1, a second sample in its window.
-    recordCacheEconomics(state, [assistant("a", 3000, 2400), assistant("b", 3000, 3000)])
+    recordCacheEconomics(state, [assistant("a", 3000, 2000), assistant("b", 3000, 2600)])
     assert.equal(state.foldEconomics.length, 0)
 
-    // Turn 3: block 2 appears, which closes block 1's window.
-    withBlock(2, 500, 50)
-    state.prune.messages.blocksById.set(2, {
-        ...state.prune.messages.blocksById.get(1)!,
-        blockId: 2,
-    })
+    addBlock(state, 2, 500, 50)
     recordCacheEconomics(state, [
-        assistant("a", 3000, 2400),
-        assistant("b", 3000, 3000),
-        assistant("c", 1000, 500),
+        assistant("a", 3000, 2000),
+        assistant("b", 3000, 2600),
+        assistant("c", 1000, 800),
     ])
-
     assert.equal(state.foldEconomics.length, 1)
-    const settled = state.foldEconomics[0]!
-    assert.equal(settled.blockId, 1)
-    assert.equal(settled.compressed, 2000)
-    assert.equal(settled.turns, 2)
+    assert.equal(state.foldEconomics[0]!.blockId, 1)
     assert.equal(state.cacheLedgerSeenBlockId, 2)
 })
 
@@ -182,21 +221,23 @@ test("stats reports the folds, including an unprofitable one", () => {
                 compressed: 2000,
                 summary: 400,
                 firstHitPct: 0.8,
-                turns: 2,
-                avoided: 6000,
-                repaid: 600,
-                netSaved: 2600,
+                turns: 4,
+                avgBefore: 5000,
+                avgAfter: 2000,
+                deltaPerTurn: 3000,
+                netSaved: 12000,
             },
             {
                 blockId: 2,
                 topic: "bad",
-                compressed: 1500,
+                compressed: 150,
                 summary: 100,
-                firstHitPct: 0,
-                turns: 6,
-                avoided: 6000,
-                repaid: 6000,
-                netSaved: -2400,
+                firstHitPct: 0.5,
+                turns: 2,
+                avgBefore: 7000,
+                avgAfter: 9000,
+                deltaPerTurn: -2000,
+                netSaved: -4000,
             },
         ],
     )
@@ -204,9 +245,10 @@ test("stats reports the folds, including an unprofitable one", () => {
     assert.match(text, /Fold economics/)
     // Newest first, so the most recent fold is on top.
     assert.ok(text.indexOf("block 2") < text.indexOf("block 1"), "newest fold first")
-    assert.match(text, /block 1: \+2\.6K tokens over 2 turn\(s\)/)
-    assert.match(text, /block 2: -2\.4K tokens over 6 turn\(s\)/)
-    assert.match(text, /Net:\s+\+200 tokens\s+\(2 fold\(s\) settled\)/)
-    // The unprofitable fold has to be visible, or the number means nothing.
-    assert.ok(!/2\.4K saved/.test(text))
+    assert.match(text, /block 1: \+12K tokens over 4 turn\(s\)/)
+    assert.match(text, /block 2: -4K tokens over 2 turn\(s\)/)
+    assert.match(text, /Net:\s+\+8K tokens\s+\(2 fold\(s\) settled\)/)
+    // The prompt sizes, so the number can be checked rather than trusted.
+    assert.match(text, /prompt\/turn 5K tokens -> 2K tokens/)
+    assert.match(text, /prompt\/turn 7K tokens -> 9K tokens/)
 })
