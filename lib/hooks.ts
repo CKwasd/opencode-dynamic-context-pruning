@@ -37,6 +37,7 @@ import {
 import { type HostPermissionSnapshot } from "./host-permissions"
 import { compressPermission, syncCompressPermissionState } from "./compress-permission"
 import { checkSession, ensureSessionInitialized, saveSessionState, syncToolCache } from "./state"
+import { detectConflicts, recordConflicts } from "./conflicts"
 import { refreshModifiedPaths, type ModifiedFile } from "./protected-paths"
 import { cacheSystemPromptTokens } from "./ui/utils"
 
@@ -135,6 +136,7 @@ export function createChatMessageTransformHandler(
         cacheSystemPromptTokens(state, output.messages)
         assignMessageRefs(state, output.messages)
         syncCompressionBlocks(state, logger, output.messages)
+        state.conflicts = recordConflicts(state, detectConflicts(state, output.messages), state.conflicts)
         await refreshModifiedPaths(
             state,
             config,

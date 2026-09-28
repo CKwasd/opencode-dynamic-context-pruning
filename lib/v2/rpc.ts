@@ -17,6 +17,12 @@ const stats = z.object({
         sessionCount: z.number(),
     }),
 })
+const conflict = z.object({
+    kind: z.enum(["orphaned-block", "foreign-compression"]),
+    since: z.number(),
+    detail: z.string(),
+})
+
 const context = z.object({
     system: z.number(),
     user: z.number(),
@@ -53,6 +59,7 @@ export const rpc = {
                 blockedReason: z.string().optional(),
                 context,
                 stats,
+                conflicts: z.array(conflict),
             }),
         },
         manual: { input: session.extend({ enabled: z.boolean() }), output: z.object({}) },

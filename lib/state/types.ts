@@ -1,6 +1,7 @@
 import type { CompressionTimingState } from "../compress/timing"
 import type { IdFormat } from "../message-ids"
 import { Message, Part } from "@opencode-ai/sdk/v2"
+import type { ConflictEvent } from "../conflicts"
 
 export interface WithParts {
     info: Message
@@ -98,6 +99,8 @@ export interface Nudges {
 
 export interface SessionState {
     idFormat: IdFormat
+    /** Bounded ring of evidence that something else rewrote this conversation. */
+    conflicts: ConflictEvent[]
     sessionId: string | null
     isSubAgent: boolean
     manualMode: false | "active" | "compress-pending"

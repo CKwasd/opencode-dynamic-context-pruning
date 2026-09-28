@@ -30,6 +30,7 @@ import {
 import { countTokens } from "../token-utils"
 import { matchesGlob } from "../protected-patterns"
 import { refreshModifiedPaths } from "../protected-paths"
+import { detectConflicts, recordConflicts, type ConflictEvent } from "../conflicts"
 import { history, project } from "./messages"
 import { analyzeContextTokens } from "../commands/context"
 import { buildStatsReport } from "../commands/stats"
@@ -255,6 +256,11 @@ export async function setup(ctx: Plugin.Context) {
                 assignMessageRefs(state, view.messages)
                 // Compaction may select only a prefix; block origins can be in the retained tail.
                 syncCompressionBlocks(state, logger, messages)
+                state.conflicts = recordConflicts(
+                    state,
+                    detectConflicts(state, messages),
+                    state.conflicts,
+                )
                 await refreshModifiedPaths(state, config, logger, async () =>
                     (
                         await ctx.vcs.status({
@@ -478,6 +484,11 @@ export async function setup(ctx: Plugin.Context) {
                         : {}),
                     context: analyzeContextTokens(state, messages),
                     stats: await buildStatsReport(state, logger),
+                    conflicts: state.conflicts.map((event) => ({
+                        kind: event.kind,
+                        since: event.since,
+                        detail: event.detail,
+                    })),
                 }
             }),
         manual: ({ sessionID, enabled }) =>

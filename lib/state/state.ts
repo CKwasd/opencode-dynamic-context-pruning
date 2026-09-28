@@ -100,6 +100,7 @@ export function createSessionState(idFormat: IdFormat = "xml"): SessionState {
         lastCompaction: 0,
         currentTurn: 0,
         modelContextLimit: undefined,
+        conflicts: [],
         modifiedPathPatterns: [],
         modifiedPathsFetchedAt: 0,
         systemPromptTokens: undefined,

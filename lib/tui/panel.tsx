@@ -20,6 +20,7 @@ export function DcpPanelView(props: {
     const theme = props.api.theme.current
     const labelWidth = Math.max(8, Math.min(24, Math.floor((props.width - 6) * 0.45)))
     const { context: breakdown, stats, manualMode, canCompress } = props.snapshot
+    const conflicts = props.snapshot.conflicts ?? []
     const total = Math.max(0, breakdown.total)
     const pruned = breakdown.prunedTokens
 
@@ -95,6 +96,29 @@ export function DcpPanelView(props: {
                     onClick={props.onContext}
                 />
             </Card>
+
+            {conflicts.length > 0 ? (
+                <Card theme={theme} title="Conflicts">
+                    <StatusPill
+                        theme={theme}
+                        label="Detected"
+                        value={conflicts.length === 1 ? "1 event" : `${conflicts.length} events`}
+                        accent="error"
+                    />
+                    {conflicts.slice(-3).map((event) => (
+                        <box>
+                            <text fg={theme.textMuted}>{event.detail}</text>
+                        </box>
+                    ))}
+                    {conflicts.length > 3 ? (
+                        <box>
+                            <text fg={theme.textMuted}>
+                                {conflicts.length - 3} more. Run /dcp stats for the full list.
+                            </text>
+                        </box>
+                    ) : null}
+                </Card>
+            ) : null}
         </box>
     )
 }

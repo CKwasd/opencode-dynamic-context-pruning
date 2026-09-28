@@ -32,6 +32,8 @@ export type SnapshotView = {
     blockedReason?: string
     context: ReturnType<typeof analyzeContextTokens>
     stats: StatsReport
+    /** Evidence that something other than DCP rewrote this conversation. */
+    conflicts: Array<{ kind: string; since: number; detail: string }>
 }
 
 export type DcpCommand = {
