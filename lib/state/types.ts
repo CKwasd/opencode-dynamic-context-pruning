@@ -2,6 +2,7 @@ import type { CompressionTimingState } from "../compress/timing"
 import type { IdFormat } from "../message-ids"
 import { Message, Part } from "@opencode-ai/sdk/v2"
 import type { ConflictEvent } from "../conflicts"
+import type { CacheSample, FoldEconomics } from "../cache-ledger"
 
 export interface WithParts {
     info: Message
@@ -101,6 +102,12 @@ export interface SessionState {
     idFormat: IdFormat
     /** Bounded ring of evidence that something else rewrote this conversation. */
     conflicts: ConflictEvent[]
+    /** Per-request cache observations, oldest first. */
+    cacheSamples: CacheSample[]
+    /** Folds whose cost has been settled, oldest first. */
+    foldEconomics: FoldEconomics[]
+    /** Highest block id already settled or attributed to a sample. */
+    cacheLedgerSeenBlockId: number
     sessionId: string | null
     isSubAgent: boolean
     manualMode: false | "active" | "compress-pending"

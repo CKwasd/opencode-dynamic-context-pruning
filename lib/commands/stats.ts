@@ -8,6 +8,7 @@ import type { SessionState, WithParts } from "../state"
 import { sendIgnoredMessage } from "../ui/notification"
 import { formatTokenCount } from "../ui/utils"
 import { loadAllSessionStats, type AggregatedStats } from "../state/persistence"
+import type { FoldEconomics } from "../cache-ledger"
 import { getCurrentParams } from "../token-utils"
 import { getActiveCompressionTargets } from "./compression-targets"
 
@@ -27,6 +28,7 @@ export function formatStatsMessage(
     sessionDurationMs: number,
     allTime: AggregatedStats,
     sessionRetrievedTokens = 0,
+    foldEconomics: FoldEconomics[] = [],
 ): string {
     const lines: string[] = []
 
@@ -50,6 +52,30 @@ export function formatStatsMessage(
     if (sessionRetrievedTokens > 0) {
         lines.push(`  Retrieved:         ~${formatTokenCount(sessionRetrievedTokens)} put back`)
     }
+    if (foldEconomics.length > 0) {
+        lines.push("")
+        lines.push("Fold economics (context kept out vs cache repaid):")
+        lines.push("─".repeat(60))
+        // Newest first: the recent folds are the ones that describe how this
+        // session is behaving.
+        for (const fold of [...foldEconomics].reverse().slice(0, 5)) {
+            const net = fold.netSaved
+            const sign = net >= 0 ? "+" : "-"
+            const hit =
+                fold.firstHitPct === undefined
+                    ? ""
+                    : `  first hit ${(fold.firstHitPct * 100).toFixed(0)}%`
+            lines.push(
+                `  block ${fold.blockId}: ${sign}${formatTokenCount(Math.abs(net))} over ${fold.turns} turn(s)${hit}`,
+            )
+        }
+        const netTotal = foldEconomics.reduce((total, fold) => total + fold.netSaved, 0)
+        lines.push(
+            `  Net:               ${netTotal >= 0 ? "+" : "-"}${formatTokenCount(Math.abs(netTotal))}` +
+                `  (${foldEconomics.length} fold(s) settled)`,
+        )
+    }
+
     lines.push("")
     lines.push("All-time:")
     lines.push("─".repeat(60))
@@ -112,6 +138,7 @@ export async function handleStatsCommand(ctx: StatsCommandContext): Promise<void
         report.sessionDurationMs,
         report.allTime,
         report.sessionRetrievedTokens,
+        state.foldEconomics,
     )
 
     const params = getCurrentParams(state, messages, logger)

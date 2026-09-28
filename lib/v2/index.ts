@@ -30,7 +30,8 @@ import {
 import { countTokens } from "../token-utils"
 import { matchesGlob } from "../protected-patterns"
 import { refreshModifiedPaths } from "../protected-paths"
-import { detectConflicts, recordConflicts, type ConflictEvent } from "../conflicts"
+import { detectConflicts, recordConflicts } from "../conflicts"
+import { recordCacheEconomics } from "../cache-observe"
 import { history, project } from "./messages"
 import { analyzeContextTokens } from "../commands/context"
 import { buildStatsReport } from "../commands/stats"
@@ -261,6 +262,7 @@ export async function setup(ctx: Plugin.Context) {
                     detectConflicts(state, messages),
                     state.conflicts,
                 )
+                recordCacheEconomics(state, messages)
                 await refreshModifiedPaths(state, config, logger, async () =>
                     (
                         await ctx.vcs.status({
