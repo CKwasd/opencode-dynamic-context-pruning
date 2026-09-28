@@ -1,4 +1,5 @@
 import { tool } from "@opencode-ai/plugin"
+import type { RecallConfig } from "../config"
 import type { ToolContext } from "../compress/types"
 import type { IdFormat } from "../message-ids"
 import { formatBlockRef, parseBlockRef, formatMessageRef } from "../message-ids"
@@ -11,12 +12,45 @@ import type { WithParts } from "../state"
 // A retrieval tool that returns whole messages can hand back more than the
 // compression it replaced. Codex's retrieval tools take the smaller of the host
 // truncation budget and their own cap, and describe the cap in the schema; the
-// constants below are this side of that. Truncation is marked rather than
-// silent, and read_item takes an offset so a model that only wanted the first
-// part of a long message can still have it.
-export const READ_ITEM_MAX_TOKENS = 4000
-export const RECALL_MAX_RESULTS = 10
-export const RECALL_MAX_SNIPPET_CHARS = 240
+// limits below are this side of that, and they are settable under `recall` so a
+// user can tighten them without a rebuild. A read that would exceed the budget
+// is refused rather than shortened: a silently cut answer is indistinguishable
+// from a complete one.
+export const DEFAULT_LIMITS = {
+    maxSearchResults: 10,
+    maxCharsPerItem: 240,
+    maxReadTokens: 4000,
+    resultTokenBudget: 10_000,
+    maxQueryTerms: 12,
+    maxQueryChars: 200,
+} as const
+
+export interface RecallLimits {
+    maxSearchResults: number
+    maxCharsPerItem: number
+    maxReadTokens: number
+    resultTokenBudget: number
+    maxQueryTerms: number
+    maxQueryChars: number
+}
+
+export function resolveRecallLimits(config?: RecallConfig): RecallLimits {
+    const positive = (value: number | undefined, fallback: number): number =>
+        typeof value === "number" && Number.isFinite(value) && value > 0
+            ? Math.floor(value)
+            : fallback
+    return {
+        maxSearchResults: positive(config?.maxSearchResults, DEFAULT_LIMITS.maxSearchResults),
+        maxCharsPerItem: positive(config?.maxCharsPerItem, DEFAULT_LIMITS.maxCharsPerItem),
+        maxReadTokens: positive(config?.maxReadTokens, DEFAULT_LIMITS.maxReadTokens),
+        resultTokenBudget: positive(config?.resultTokenBudget, DEFAULT_LIMITS.resultTokenBudget),
+        maxQueryTerms: positive(config?.maxQueryTerms, DEFAULT_LIMITS.maxQueryTerms),
+        maxQueryChars: positive(config?.maxQueryChars, DEFAULT_LIMITS.maxQueryChars),
+    }
+}
+
+/** Thrown for a request the tool will not silently narrow on the model's behalf. */
+export class RecallError extends Error {}
 // A three-character cut is as short as a term can get and still be worth
 // searching: "key", "api", "git" and "sql" are all real queries. That leaves
 // function words in, and they match nearly every message, so they are listed
@@ -251,87 +285,121 @@ export function createListBlocksTool(ctx: ToolContext) {
 }
 
 export function createReadItemTool(ctx: ToolContext) {
+    const limits = resolveRecallLimits(ctx.config.recall)
+
+    function resolveRef(wanted: string): string | { block: string[] } {
+        const blockId = parseBlockRef(wanted, ctx.state.idFormat)
+        if (blockId !== null) {
+            const block = ctx.state.prune.messages.blocksById.get(blockId)
+            if (!block) throw new RecallError(`${wanted}: no compressed block with that reference.`)
+            const refs = block.effectiveMessageIds
+                .map((id) => ctx.state.messageIds.byRawId.get(id))
+                .filter((entry): entry is string => Boolean(entry))
+            if (refs.length === 0) {
+                throw new RecallError(`${wanted}: block "${block.topic}" has no readable messages.`)
+            }
+            return { block: refs }
+        }
+        const rawId = ctx.state.messageIds.byRef.get(wanted)
+        if (!rawId) throw new RecallError(`${wanted}: no message with that reference.`)
+        return rawId
+    }
+
+    async function render(
+        rawId: string,
+        maxChars: number,
+        sessionID: string,
+        offset: number,
+    ): Promise<string> {
+        const messages = await fetchSessionMessages(ctx.client, sessionID)
+        const message = messages.find((entry) => entry.info.id === rawId)
+        if (!message) return "(no longer in the session history)"
+        const text = messageText(message)
+        const start = offset > 0 ? Math.min(offset, text.length) : 0
+        const slice = text.slice(start, start + maxChars)
+        const consumed = start + slice.length
+        return [
+            `(${message.info.role}, ~${formatTokenCount(countAllMessageTokens(message))})`,
+            consumed < text.length
+                ? markTruncation(
+                      slice,
+                      `showing ${consumed} of ${text.length} characters. Continue with offset=${consumed}.`,
+                  )
+                : slice,
+        ].join("\n")
+    }
+
     return tool({
         description:
-            `Read one original message by its reference, for example ${refExamples(
+            `Read one or more original messages by reference, for example ${refExamples(
                 ctx.state.idFormat,
             )}. ` +
             "A block reference lists the messages that block covers. " +
-            `Returns at most ${READ_ITEM_MAX_TOKENS} tokens; pass offset to continue. ` +
+            `The whole call returns at most ${limits.maxReadTokens} tokens. ` +
             "Original messages are never deleted by compression, so anything you can see a reference to is still there.",
         args: {
-            ref: tool.schema.string().describe("Message reference, e.g. m0042 or @42@"),
+            refs: tool.schema
+                .array(tool.schema.string())
+                .describe("One or more message references, e.g. @1@ or m0042"),
             offset: tool.schema
                 .number()
                 .optional()
-                .describe("Character offset to resume from when a message was truncated"),
+                .describe("Character offset to resume from when a message was cut short"),
+            limit: tool.schema
+                .number()
+                .optional()
+                .describe(`Token cap for the whole call, up to ${limits.maxReadTokens}`),
         },
-        async execute({ ref, offset }, toolCtx) {
+        async execute({ refs, limit, offset }, toolCtx) {
             const sessionID = (toolCtx as unknown as { sessionID?: string }).sessionID
             if (!sessionID) return "read_item needs a session."
 
-            const wanted = ref.trim()
+            const wanted = (Array.isArray(refs) ? refs : [refs]).map((r) => String(r).trim())
+            if (wanted.length === 0) return "read_item needs at least one reference."
 
-            // Block references are what the model sees most, and asking for one
-            // here used to be a dead end: only message refs are ever registered
-            // in byRef. Name the block's messages instead of refusing.
-            const blockId = parseBlockRef(wanted, ctx.state.idFormat)
-            if (blockId !== null) {
-                const block = ctx.state.prune.messages.blocksById.get(blockId)
-                if (!block) return `No compressed block ${wanted} in this session.`
-                const refs = block.effectiveMessageIds
-                    .map((id) => ctx.state.messageIds.byRawId.get(id))
-                    .filter((entry): entry is string => Boolean(entry))
-                if (refs.length === 0) {
-                    return `Block ${wanted} ("${block.topic}") has no readable messages.`
+            const cap = Math.min(
+                limits.maxReadTokens,
+                typeof limit === "number" && limit > 0 ? Math.floor(limit) : limits.maxReadTokens,
+            )
+            const maxChars = cap * 4 // ~4 characters per token
+            const perRef = Math.max(1, Math.floor(maxChars / wanted.length))
+
+            const parts: string[] = []
+            let readAnything = false
+            for (const ref of wanted) {
+                try {
+                    const resolved = resolveRef(ref)
+                    if (typeof resolved === "string") {
+                        readAnything = true
+                        parts.push(
+                            `--- ${ref}\n${await render(resolved, perRef, sessionID, offset ?? 0)}`,
+                        )
+                    } else {
+                        parts.push(
+                            `--- ${ref}\nBlock covers ${resolved.block.length} message(s): ` +
+                                resolved.block.slice(0, 20).join(", ") +
+                                (resolved.block.length > 20 ? ", ..." : "") +
+                                "\nPass one of these to read_item to read it.",
+                        )
+                    }
+                } catch (error) {
+                    const known = [...ctx.state.messageIds.byRef.keys()].slice(0, 12)
+                    parts.push(
+                        error instanceof RecallError
+                            ? `--- ${error.message}` +
+                                  (known.length > 0 ? ` Known references: ${known.join(", ")}` : "")
+                            : `--- ${ref}: ${String(error)}`,
+                    )
                 }
-                return [
-                    `Block ${wanted} ("${block.topic}", ${block.active ? "active" : "inactive"}) covers ${refs.length} message(s):`,
-                    ...refs.slice(0, 20).map((entry) => `  ${entry}`),
-                    refs.length > 20 ? `  ... and ${refs.length - 20} more` : "",
-                    "",
-                    "Pass one of these references to read_item to read it.",
-                ]
-                    .filter(Boolean)
-                    .join("\n")
             }
-
-            const rawId = ctx.state.messageIds.byRef.get(wanted)
-            if (!rawId) {
-                const known = [...ctx.state.messageIds.byRef.keys()].slice(0, 10)
-                return [
-                    `No message with reference ${ref}.`,
-                    known.length > 0
-                        ? `References in this session include: ${known.join(", ")}`
-                        : "No message references have been assigned yet.",
-                ].join("\n")
+            const output = parts.join("\n")
+            const tokens = countTokens(output)
+            if (tokens > limits.resultTokenBudget) {
+                return `Refusing: ~${tokens} tokens exceeds the ${limits.resultTokenBudget} token limit for one read_item call. Read fewer references at once, or lower the cap with the limit argument.`
             }
-
-            const messages = await fetchSessionMessages(ctx.client, sessionID)
-            const message = messages.find((entry) => entry.info.id === rawId)
-            if (!message) {
-                return `Message ${ref} is no longer in the session history.`
-            }
-
-            const text = messageText(message)
-            const start = typeof offset === "number" && offset > 0 ? offset : 0
-            // ~4 characters per token is the usual English ratio; the cap is a
-            // guard on the returned size, not an exact tokenizer.
-            const maxChars = READ_ITEM_MAX_TOKENS * 4
-            const slice = text.slice(start, start + maxChars)
-            const consumed = start + slice.length
-            const truncated = consumed < text.length
-
-            const output = [
-                `${ref}  (${message.info.role}, ~${formatTokenCount(countAllMessageTokens(message), true)})`,
-                truncated
-                    ? markTruncation(
-                          slice,
-                          `truncated at ${READ_ITEM_MAX_TOKENS} tokens, ${text.length - consumed} characters left. Continue with offset=${consumed}.`,
-                      )
-                    : slice,
-            ].join("\n")
-            await recordRetrieved(ctx, toolCtx, output)
+            // A call that only reported errors retrieved nothing, and the counter
+            // exists to measure what came back.
+            if (readAnything) await recordRetrieved(ctx, toolCtx, output)
             return output
         },
     })
@@ -370,7 +438,8 @@ export function findRecallMatches(
     query: string,
     idFormat: IdFormat,
     messages: WithParts[],
-    maxResults = RECALL_MAX_RESULTS,
+    maxResults: number = DEFAULT_LIMITS.maxSearchResults,
+    maxCharsPerItem: number = DEFAULT_LIMITS.maxCharsPerItem,
 ): RecallMatch[] {
     const terms = parseQueryTerms(query)
     if (terms.length === 0) return []
@@ -403,7 +472,7 @@ export function findRecallMatches(
         }
         if (hitTerms === 0) continue
 
-        const from = Math.max(0, firstIndex - RECALL_MAX_SNIPPET_CHARS / 3)
+        const from = Math.max(0, firstIndex - maxCharsPerItem / 3)
         const blockIds = blockByMessageId.get(rawId) ?? []
         found.push({
             ref,
@@ -413,8 +482,8 @@ export function findRecallMatches(
             hitTerms,
             snippet:
                 (from > 0 ? "..." : "") +
-                text.slice(from, from + RECALL_MAX_SNIPPET_CHARS).replace(/\s+/g, " ") +
-                (from + RECALL_MAX_SNIPPET_CHARS < text.length ? "..." : ""),
+                text.slice(from, from + maxCharsPerItem).replace(/\s+/g, " ") +
+                (from + maxCharsPerItem < text.length ? "..." : ""),
         })
     }
 
@@ -465,6 +534,7 @@ export function renderRecallResult(matches: RecallMatch[], terms: string[] = [])
 }
 
 export function createRecallTool(ctx: ToolContext) {
+    const limits = resolveRecallLimits(ctx.config.recall)
     return tool({
         description:
             "Search this session's original messages for a keyword. Returns references and short snippets only, " +
@@ -479,7 +549,14 @@ export function createRecallTool(ctx: ToolContext) {
 
             const messages = await fetchSessionMessages(ctx.client, sessionID)
             const terms = parseQueryTerms(query)
-            const matches = findRecallMatches(ctx.state, query, ctx.state.idFormat, messages)
+            const matches = findRecallMatches(
+                ctx.state,
+                query,
+                ctx.state.idFormat,
+                messages,
+                limits.maxSearchResults,
+                limits.maxCharsPerItem,
+            )
             const output = renderRecallResult(matches, terms)
             await recordRetrieved(ctx, toolCtx, output)
             return output

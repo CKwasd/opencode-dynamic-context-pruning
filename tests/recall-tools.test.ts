@@ -11,8 +11,9 @@ import {
     findRecallMatches,
     renderRecallResult,
     messageText,
-    RECALL_MAX_RESULTS,
-    READ_ITEM_MAX_TOKENS,
+    maxSearchResults,
+    maxReadTokens,
+    DEFAULT_LIMITS,
 } from "../lib/recall"
 import type { PluginConfig } from "../lib/config"
 import type { PromptStore } from "../lib/prompts/store"
@@ -103,7 +104,7 @@ test("read_item resolves a ref to the original message", async () => {
     assignMessageRefs(state, history)
 
     const out = String(
-        await createReadItemTool(ctxWith(state, history)).execute({ ref: "m0001" }, toolCtx),
+        await createReadItemTool(ctxWith(state, history)).execute({ refs: ["m0001"] }, toolCtx),
     )
     assert.match(out, /the original text/)
 })
@@ -114,24 +115,24 @@ test("read_item names the references that do exist when asked for a bad one", as
     assignMessageRefs(state, history)
 
     const out = String(
-        await createReadItemTool(ctxWith(state, history)).execute({ ref: "m9999" }, toolCtx),
+        await createReadItemTool(ctxWith(state, history)).execute({ refs: ["m9999"] }, toolCtx),
     )
-    assert.match(out, /No message with reference m9999/)
-    assert.match(out, /References in this session include: m0001/)
+    assert.match(out, /m9999: no message with that reference/)
+    assert.match(out, /Known references: m0001/)
 })
 
 test("read_item truncates and says how to continue", async () => {
     const state = createSessionState("xml")
-    const long = "x".repeat(READ_ITEM_MAX_TOKENS * 4 + 500)
+    const long = "x".repeat(DEFAULT_LIMITS.maxReadTokens * 4 + 500)
     const history = [message("m1", long)]
     assignMessageRefs(state, history)
     const tool = createReadItemTool(ctxWith(state, history))
 
-    const first = String(await tool.execute({ ref: "m0001" }, toolCtx))
-    assert.match(first, new RegExp(`truncated at ${READ_ITEM_MAX_TOKENS} tokens`))
+    const first = String(await tool.execute({ refs: ["m0001"] }, toolCtx))
+    assert.match(first, /Continue with offset=\d+/)
     const offset = Number(first.match(/offset=(\d+)/)![1])
-    const second = String(await tool.execute({ ref: "m0001", offset }, toolCtx))
-    assert.ok(!second.includes("truncated"), "the remainder should fit")
+    const second = String(await tool.execute({ refs: ["m0001"], offset }, toolCtx))
+    assert.ok(!second.includes("Continue with offset"), "the remainder should fit")
 })
 
 test("recall returns references and snippets, never whole messages", () => {
@@ -175,7 +176,10 @@ test("recall is capped", () => {
         history.push(m)
         assignMessageRefs(state, [m])
     }
-    assert.equal(findRecallMatches(state, "hit", "xml", history).length, RECALL_MAX_RESULTS)
+    assert.equal(
+        findRecallMatches(state, "hit", "xml", history).length,
+        DEFAULT_LIMITS.maxSearchResults,
+    )
 })
 
 test("recall over the wire reaches the session history and names the block", async () => {

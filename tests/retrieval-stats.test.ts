@@ -3,7 +3,7 @@ import test from "node:test"
 import { Logger } from "../lib/logger"
 import { createSessionState, type WithParts } from "../lib/state"
 import { assignMessageRefs } from "../lib/message-ids"
-import { createReadItemTool, createRecallTool } from "../lib/recall"
+import { createReadItemTool, createRecallTool, maxReadTokens, DEFAULT_LIMITS } from "../lib/recall"
 import { formatStatsMessage } from "../lib/commands/stats"
 import type { PluginConfig } from "../lib/config"
 import type { PromptStore } from "../lib/prompts/store"
@@ -36,7 +36,10 @@ test("read_item records what it put back", async () => {
     assignMessageRefs(state, history)
 
     assert.equal(state.stats.totalRetrievedTokens ?? 0, 0)
-    const out = await createReadItemTool(ctxWith(state, history)).execute({ ref: "m0001" }, toolCtx)
+    const out = await createReadItemTool(ctxWith(state, history)).execute(
+        { refs: ["m0001"] },
+        toolCtx,
+    )
     assert.ok(String(out).length > 1000)
     assert.ok(
         (state.stats.totalRetrievedTokens ?? 0) > 0,
@@ -50,9 +53,9 @@ test("read_item counts each call, and the running total matches the sum", async 
     assignMessageRefs(state, history)
     const tool = createReadItemTool(ctxWith(state, history))
 
-    await tool.execute({ ref: "m0001" }, toolCtx)
+    await tool.execute({ refs: ["m0001"] }, toolCtx)
     const first = state.stats.totalRetrievedTokens ?? 0
-    await tool.execute({ ref: "m0001" }, toolCtx)
+    await tool.execute({ refs: ["m0001"] }, toolCtx)
     const second = state.stats.totalRetrievedTokens ?? 0
 
     assert.ok(second > first, "a second retrieval adds to the total")
@@ -64,7 +67,7 @@ test("a failed lookup counts nothing", async () => {
     const history = [message("m1", "content")]
     assignMessageRefs(state, history)
 
-    await createReadItemTool(ctxWith(state, history)).execute({ ref: "m9999" }, toolCtx)
+    await createReadItemTool(ctxWith(state, history)).execute({ refs: ["m9999"] }, toolCtx)
     assert.equal(state.stats.totalRetrievedTokens ?? 0, 0)
 })
 

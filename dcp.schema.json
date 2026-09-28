@@ -331,6 +331,51 @@
                     }
                 }
             }
+        },
+        "recall": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Bounds on the retrieval tools. A retrieval tool that returns whole messages can hand back more than the compression it replaces, so every result is capped.",
+            "properties": {
+                "maxSearchResults": {
+                    "type": "number",
+                    "default": 10,
+                    "description": "Snippets a single search returns"
+                },
+                "maxCharsPerItem": {
+                    "type": "number",
+                    "default": 240,
+                    "description": "Characters of context around a match in a snippet"
+                },
+                "maxReadTokens": {
+                    "type": "number",
+                    "default": 4000,
+                    "description": "Tokens one read_item call may return"
+                },
+                "resultTokenBudget": {
+                    "type": "number",
+                    "default": 10000,
+                    "description": "Tokens one recall or read_item call may return in total. A result over this is refused rather than shortened, because a cut answer is indistinguishable from a complete one"
+                },
+                "maxQueryTerms": {
+                    "type": "number",
+                    "default": 12,
+                    "description": "Terms a single query may contribute"
+                },
+                "maxQueryChars": {
+                    "type": "number",
+                    "default": 200,
+                    "description": "Characters a single query term may be"
+                }
+            },
+            "default": {
+                "maxSearchResults": 10,
+                "maxCharsPerItem": 240,
+                "maxReadTokens": 4000,
+                "resultTokenBudget": 10000,
+                "maxQueryTerms": 12,
+                "maxQueryChars": 200
+            }
         }
     }
 }

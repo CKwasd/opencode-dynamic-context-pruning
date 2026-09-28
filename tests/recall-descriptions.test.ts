@@ -3,7 +3,9 @@ import test from "node:test"
 import { Logger } from "../lib/logger"
 import { createSessionState, type WithParts } from "../lib/state"
 import { assignMessageRefs } from "../lib/message-ids"
-import { createListBlocksTool, createReadItemTool } from "../lib/recall"
+import {
+    createListBlocksTool, createReadItemTool,
+} from "../lib/recall"
 import type { PluginConfig } from "../lib/config"
 import type { PromptStore } from "../lib/prompts/store"
 
@@ -62,11 +64,11 @@ test("a model reading the description cannot invent a cross-format ref", async (
     const tool = createReadItemTool(ctxWith(state, history))
 
     // The failure the old description invited.
-    const wrong = String(await tool.execute({ ref: "m0001" }, toolCtx))
-    assert.match(wrong, /No message with reference m0001/)
-    assert.match(wrong, /References in this session include: @1@/)
+    const wrong = String(await tool.execute({ refs: ["m0001"] }, toolCtx))
+    assert.match(wrong, /no message with that reference/i)
+    assert.match(wrong, /@1@/)
 
     // And the example the description does give works.
-    const right = String(await tool.execute({ ref: "@1@" }, toolCtx))
+    const right = String(await tool.execute({ refs: ["@1@"] }, toolCtx))
     assert.match(right, /the body/)
 })

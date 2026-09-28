@@ -22,6 +22,38 @@ export interface Deduplication {
     protectedTools: string[]
 }
 
+/**
+ * Bounds on the retrieval tools.
+ *
+ * A retrieval tool that returns whole messages can hand back more than the
+ * compression it replaces, so every result is capped. The defaults are the
+ * point: a search returns references and short snippets, and only an explicit
+ * read brings content back.
+ */
+export interface RecallConfig {
+    /** Snippets a single search returns. */
+    maxSearchResults: number
+    /** Characters of context around a match in a snippet. */
+    maxCharsPerItem: number
+    /** Tokens one read_item call may return. */
+    maxReadTokens: number
+    /** Tokens one recall call may return in total. */
+    resultTokenBudget: number
+    /** Terms a single query may contribute. */
+    maxQueryTerms: number
+    /** Characters a single query term may be. */
+    maxQueryChars: number
+}
+
+export const DEFAULT_RECALL: RecallConfig = {
+    maxSearchResults: 10,
+    maxCharsPerItem: 240,
+    maxReadTokens: 4000,
+    resultTokenBudget: 10000,
+    maxQueryTerms: 12,
+    maxQueryChars: 200,
+}
+
 export interface CompressConfig {
     /**
      * Context window to assume when the host does not report one. A host that
@@ -88,6 +120,7 @@ export interface PluginConfig {
     turnProtection: TurnProtection
     experimental: ExperimentalConfig
     protectedFilePatterns: string[]
+    recall: RecallConfig
     compress: CompressConfig
     strategies: {
         deduplication: Deduplication
@@ -128,6 +161,13 @@ export const VALID_CONFIG_KEYS = new Set([
     "experimental.customPrompts",
     "experimental.protectModifiedFiles",
     "protectedFilePatterns",
+    "recall",
+    "recall.maxSearchResults",
+    "recall.maxCharsPerItem",
+    "recall.maxReadTokens",
+    "recall.resultTokenBudget",
+    "recall.maxQueryTerms",
+    "recall.maxQueryChars",
     "commands",
     "commands.enabled",
     "commands.protectedTools",
@@ -716,6 +756,7 @@ const defaultConfig: PluginConfig = {
         protectModifiedFiles: false,
     },
     protectedFilePatterns: [],
+    recall: { ...DEFAULT_RECALL },
     compress: {
         mode: "range",
         permission: "allow",
@@ -937,6 +978,21 @@ function mergeManualMode(
     }
 }
 
+function mergeRecall(
+    base: PluginConfig["recall"],
+    override?: Partial<PluginConfig["recall"]>,
+): PluginConfig["recall"] {
+    if (override === undefined) return base
+    return {
+        maxSearchResults: override.maxSearchResults ?? base.maxSearchResults,
+        maxCharsPerItem: override.maxCharsPerItem ?? base.maxCharsPerItem,
+        maxReadTokens: override.maxReadTokens ?? base.maxReadTokens,
+        resultTokenBudget: override.resultTokenBudget ?? base.resultTokenBudget,
+        maxQueryTerms: override.maxQueryTerms ?? base.maxQueryTerms,
+        maxQueryChars: override.maxQueryChars ?? base.maxQueryChars,
+    }
+}
+
 function mergeExperimental(
     base: PluginConfig["experimental"],
     override?: Partial<PluginConfig["experimental"]>,
@@ -964,6 +1020,7 @@ function deepCloneConfig(config: PluginConfig): PluginConfig {
         turnProtection: { ...config.turnProtection },
         experimental: { ...config.experimental },
         protectedFilePatterns: [...config.protectedFilePatterns],
+        recall: { ...config.recall },
         compress: {
             ...config.compress,
             modelMaxLimits: { ...config.compress.modelMaxLimits },
@@ -1000,6 +1057,7 @@ function mergeLayer(config: PluginConfig, data: Record<string, any>): PluginConf
         protectedFilePatterns: [
             ...new Set([...config.protectedFilePatterns, ...(data.protectedFilePatterns ?? [])]),
         ],
+        recall: mergeRecall(config.recall, data.recall),
         compress: mergeCompress(config.compress, data.compress as CompressOverride),
         strategies: mergeStrategies(config.strategies, data.strategies as any),
     }

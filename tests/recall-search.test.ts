@@ -10,7 +10,8 @@ import {
     findRecallMatches,
     parseQueryTerms,
     renderRecallResult,
-    RECALL_MAX_RESULTS,
+    maxSearchResults,
+    DEFAULT_LIMITS,
 } from "../lib/recall"
 import type { PluginConfig } from "../lib/config"
 import type { PromptStore } from "../lib/prompts/store"
@@ -145,7 +146,10 @@ test("recall is still capped after the ranking change", () => {
         history.push(m)
         assignMessageRefs(state, [m])
     }
-    assert.equal(findRecallMatches(state, "found", "xml", history).length, RECALL_MAX_RESULTS)
+    assert.equal(
+        findRecallMatches(state, "found", "xml", history).length,
+        DEFAULT_LIMITS.maxSearchResults,
+    )
 })
 
 test("read_item with a block reference lists that block's messages", async () => {
@@ -158,18 +162,20 @@ test("read_item with a block reference lists that block's messages", async () =>
     )
 
     const out = String(
-        await createReadItemTool(ctxWith(state, history)).execute({ ref: "@b2@" }, toolCtx),
+        await createReadItemTool(ctxWith(state, history)).execute({ refs: ["@b2@"] }, toolCtx),
     )
-    assert.match(out, /Block @b2@ \("Canary", active\) covers 2 message\(s\)/)
+    assert.match(out, /Block covers 2 message\(s\): @1@, @2@/)
     assert.match(out, /@1@/)
     assert.match(out, /@2@/)
-    assert.match(out, /Pass one of these references to read_item/)
+    assert.match(out, /Pass one of these to read_item/)
 })
 
 test("read_item with an unknown block says so", async () => {
     const state = createSessionState("xml")
-    const out = String(await createReadItemTool(ctxWith(state, [])).execute({ ref: "b9" }, toolCtx))
-    assert.match(out, /No compressed block b9/)
+    const out = String(
+        await createReadItemTool(ctxWith(state, [])).execute({ refs: ["b9"] }, toolCtx),
+    )
+    assert.match(out, /b9: no compressed block with that reference/)
 })
 
 test("the wire path answers the real query", async () => {
