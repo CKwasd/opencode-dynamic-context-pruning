@@ -78,7 +78,18 @@ export function createCompressRangeTool(ctx: ToolContext): ReturnType<typeof too
                 toolCtx,
                 `Compress Range: ${input.topic}`,
             )
-            const resolvedPlans = resolveRanges(input, searchContext, ctx.state)
+            const { plans: resolvedPlans, issues: rejectedEntries } = resolveRanges(
+                input,
+                searchContext,
+                ctx.state,
+            )
+            if (resolvedPlans.length === 0) {
+                throw new Error(
+                    rejectedEntries.length > 0
+                        ? rejectedEntries.join("\n")
+                        : "No range could be resolved from the given IDs.",
+                )
+            }
             validateNonOverlapping(resolvedPlans)
 
             const notifications: NotificationEntry[] = []
@@ -207,7 +218,15 @@ export function createCompressRangeTool(ctx: ToolContext): ReturnType<typeof too
 
             await finalizeSession(ctx, toolCtx, rawMessages, notifications, input.topic)
 
-            return `Compressed ${totalCompressedMessages} messages into ${COMPRESSED_BLOCK_HEADER}.`
+            const compressed = `Compressed ${totalCompressedMessages} messages into ${COMPRESSED_BLOCK_HEADER}.`
+            if (rejectedEntries.length === 0) {
+                return compressed
+            }
+            // The model wrote a summary for every entry; say which ones landed
+            // and which did not, so it can resend only the missing ones.
+            return `${compressed}\n\nSkipped ${rejectedEntries.length} of ${input.content.length} requested range(s):\n${rejectedEntries
+                .map((issue) => `- ${issue}`)
+                .join("\n")}`
         },
     })
 }

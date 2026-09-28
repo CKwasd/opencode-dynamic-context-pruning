@@ -39,33 +39,62 @@ export function validateArgs(args: CompressRangeToolArgs): void {
     }
 }
 
+export interface ResolvedRanges {
+    plans: ResolvedRangeCompression[]
+    /** One line per entry that could not be resolved, naming the entry. */
+    issues: string[]
+}
+
+/**
+ * Resolves each entry on its own so one bad ref does not discard the summaries
+ * the model already wrote for its siblings. The rejected entries come back in
+ * `issues` rather than throwing, and the caller reports them alongside the
+ * compressions that did land.
+ */
 export function resolveRanges(
     args: CompressRangeToolArgs,
     searchContext: SearchContext,
     state: SessionState,
-): ResolvedRangeCompression[] {
-    return args.content.map((entry, index) => {
+): ResolvedRanges {
+    const plans: ResolvedRangeCompression[] = []
+    const issues: string[] = []
+
+    args.content.forEach((entry, index) => {
         const normalizedEntry = {
             startId: entry.startId.trim(),
             endId: entry.endId.trim(),
             summary: entry.summary,
         }
 
-        const { startReference, endReference } = resolveBoundaryIds(
-            searchContext,
-            state,
-            normalizedEntry.startId,
-            normalizedEntry.endId,
-        )
-        const selection = resolveSelection(searchContext, startReference, endReference)
+        try {
+            const { startReference, endReference } = resolveBoundaryIds(
+                searchContext,
+                state,
+                normalizedEntry.startId,
+                normalizedEntry.endId,
+            )
+            const selection = resolveSelection(searchContext, startReference, endReference)
 
-        return {
-            index,
-            entry: normalizedEntry,
-            selection,
-            anchorMessageId: resolveAnchorMessageId(startReference),
+            plans.push({
+                index,
+                entry: normalizedEntry,
+                selection,
+                anchorMessageId: resolveAnchorMessageId(startReference),
+            })
+        } catch (error) {
+            const detail =
+                error instanceof Error
+                    ? error.message
+                    : Array.isArray(error)
+                      ? error.filter((line): line is string => typeof line === "string").join("; ")
+                      : String(error)
+            issues.push(
+                `content[${index}] (${normalizedEntry.startId}..${normalizedEntry.endId}) ${detail}`,
+            )
         }
     })
+
+    return { plans, issues }
 }
 
 export function validateNonOverlapping(plans: ResolvedRangeCompression[]): void {
