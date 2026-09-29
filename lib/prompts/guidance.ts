@@ -32,3 +32,19 @@ Prefer a smaller range biased toward the recent tail, and leave the stable prefi
 
 A single large rewrite changes the shape of the whole request and costs the provider's prefix cache on the next turn. Several small tail-biased folds keep that prefix alive and make the transition gentle. Only reach back to the earliest messages when they are genuinely the compressible part.`
 }
+
+/**
+ * The nudge is an instruction, and a model under pressure treats an
+ * instruction as something to acknowledge: "I need to compress NOW. Let me
+ * compress the recent work (m0374-m0389)." That spends context to say nothing
+ * and reads as if compression is under way when no tool has been called.
+ *
+ * The silence clause in markerIntegrityNote covers the opposite case -- a model
+ * that narrates around a call it actually made. This covers the one before it.
+ */
+export function silentCallNote(): string {
+    return `CALL SILENTLY
+This instruction is not for repeating. Do not write a plan, do not announce which range you will compress, and do not narrate the call. Call the tool.
+
+Restating it spends context to say nothing. The nudge exists to trigger a call, not a reply.`
+}

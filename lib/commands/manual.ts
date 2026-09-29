@@ -15,6 +15,7 @@ import { saveManualModeSetting } from "../state/persistence"
 import { getCurrentParams } from "../token-utils"
 import { buildCompressedBlockGuidance } from "../prompts/extensions/nudge"
 import { isIgnoredUserMessage } from "../messages/query"
+import { silentCallNote } from "../prompts/guidance"
 
 const MANUAL_MODE_ON = "Manual mode is now ON. Use /dcp-compress to trigger context tools manually."
 
@@ -23,6 +24,7 @@ const MANUAL_MODE_OFF = "Manual mode is now OFF."
 const COMPRESS_TRIGGER_PROMPT = [
     "<compress triggered manually>",
     "Manual mode trigger received. You must now use the compress tool.",
+    silentCallNote(),
     "Find the most significant completed conversation content that can be compressed into a high-fidelity technical summary.",
     "Follow the active compress mode, preserve all critical implementation details, and choose safe targets.",
     "Return after compress with a brief explanation of what content was compressed.",

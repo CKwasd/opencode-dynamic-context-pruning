@@ -1,4 +1,6 @@
-export const TURN_NUDGE = `<dcp-system-reminder>
+import { silentCallNote } from "./guidance"
+export const TURN_NUDGE = `${silentCallNote()}
+<dcp-system-reminder>
 Evaluate the conversation for compressible ranges.
 
 If any messages are cleanly closed and unlikely to be needed again, use the compress tool on them.

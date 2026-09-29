@@ -1,4 +1,6 @@
-export const CONTEXT_LIMIT_NUDGE = `<dcp-system-reminder>
+import { silentCallNote } from "./guidance"
+export const CONTEXT_LIMIT_NUDGE = `${silentCallNote()}
+<dcp-system-reminder>
 CRITICAL WARNING: MAX CONTEXT LIMIT REACHED
 
 You are at or beyond the configured max context threshold. This is an emergency context-recovery moment.
