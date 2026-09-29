@@ -14,6 +14,7 @@ import {
     saveSessionState,
     syncToolCache,
     type SessionState,
+    type WithParts,
 } from "../state"
 import { assignMessageRefs } from "../message-ids"
 import { applyPendingManualTrigger } from "../commands/manual"
@@ -209,12 +210,13 @@ export async function setup(ctx: Plugin.Context) {
         return { state, entries, session, messages }
     }
 
-    const retrievalContext = (state: SessionState) => ({
+    const retrievalContext = (state: SessionState, messages?: WithParts[]) => ({
         client,
         state,
         logger,
         config,
         prompts,
+        messages,
     })
 
     function allowed(state: SessionState) {
@@ -384,8 +386,11 @@ export async function setup(ctx: Plugin.Context) {
                         options: { codemode: false },
                         execute: (input, context) =>
                             serial(context.sessionID, async () => {
-                                const { state } = await load(context.sessionID, context.agent)
-                                const impl = spec.make(retrievalContext(state))
+                                const { state, messages } = await load(
+                                    context.sessionID,
+                                    context.agent,
+                                )
+                                const impl = spec.make(retrievalContext(state, messages))
                                 const result = await impl.execute(
                                     input as never,
                                     {

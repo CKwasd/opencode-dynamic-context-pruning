@@ -7,6 +7,7 @@ import { formatTokenCount } from "../ui/utils"
 import { countAllMessageTokens, countTokens } from "../token-utils"
 import { saveSessionState } from "../state"
 import { fetchSessionMessages } from "../compress/search"
+import { getModelInfo, resolveContextThresholds } from "../messages/inject/utils"
 import type { WithParts } from "../state"
 
 // A retrieval tool that returns whole messages can hand back more than the
@@ -253,17 +254,24 @@ export function markTruncation(text: string, note: string): string {
 export function createListBlocksTool(ctx: ToolContext) {
     return tool({
         description:
-            `List this session's compression blocks: reference (${refExamples(
+            `Report this session's context budget, then list its compression blocks: reference (${refExamples(
                 ctx.state.idFormat,
             )}), topic, size, and whether the block is still active. ` +
-            "Use it to find out what has been compressed before asking for anything back. Read-only.",
+            "Call it when you need to know how much room is left or what has been compressed " +
+            "before asking for anything back. Read-only.",
         args: {},
         async execute(_input, toolCtx) {
             void toolCtx
             const blocks = [...ctx.state.prune.messages.blocksById.values()].sort(
                 (a, b) => a.blockId - b.blockId,
             )
-            if (blocks.length === 0) return "No compressed blocks in this session yet."
+
+            const header = contextHeader(ctx)
+            if (blocks.length === 0) {
+                return header
+                    ? `${header}\nNo compressed blocks in this session yet.`
+                    : "No compressed blocks in this session yet."
+            }
 
             const lines = blocks.map((block) => {
                 const state = block.active ? "active" : "inactive"
@@ -275,6 +283,7 @@ export function createListBlocksTool(ctx: ToolContext) {
                 )
             })
             return [
+                ...(header ? [header] : []),
                 `${blocks.length} compressed block(s):`,
                 ...lines,
                 "",
@@ -282,6 +291,49 @@ export function createListBlocksTool(ctx: ToolContext) {
             ].join("\n")
         },
     })
+}
+
+/**
+ * The context budget, for a model that has no other way to learn it.
+ *
+ * The over-limit nudge carries a budget line, but the soft nudge below the
+ * threshold does not, and a model that has only seen the soft nudge has nothing
+ * to calibrate against: observed, one session estimated its own window as "200K
+ * level" against an actual 950K. Printing the figure on every turn instead
+ * would put a changing number into the prompt, which is what makes the prefix
+ * cache miss -- the same discipline the compress prompts follow. A tool the
+ * model calls when it wants the number keeps the prompt stable.
+ *
+ * Reports the thresholds, not a total: the real window is whatever the host
+ * advertises, and describing the compression trigger as "available" would have
+ * the model give up room it still has.
+ */
+function contextHeader(ctx: ToolContext): string | undefined {
+    if (!ctx.messages) return undefined
+
+    const { providerId, modelId } = getModelInfo(ctx.messages)
+    const thresholds = resolveContextThresholds(
+        ctx.config,
+        ctx.state,
+        providerId,
+        modelId,
+        ctx.messages,
+    )
+    const { currentTokens, windowLimit, minContextLimit, summaryTokens } = thresholds
+    if (windowLimit === undefined || currentTokens <= 0) return undefined
+
+    // compact, because this line spells the unit out itself; the default form
+    // already appends " tokens" and would print "760K tokens tokens".
+    const n = (tokens: number) => formatTokenCount(tokens, true)
+    const parts = [`Context: ~${n(currentTokens)} tokens in use.`]
+    parts.push(`Compress above ~${n(windowLimit)} tokens.`)
+    if (minContextLimit !== undefined) {
+        parts.push(`Reminders start at ~${n(minContextLimit)} tokens.`)
+    }
+    if (summaryTokens > 0) {
+        parts.push(`Summaries occupy ${n(summaryTokens)} tokens of that.`)
+    }
+    return parts.join(" ")
 }
 
 export function createReadItemTool(ctx: ToolContext) {

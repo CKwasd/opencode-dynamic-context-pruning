@@ -9,6 +9,12 @@ export interface ToolContext {
     logger: Logger
     config: PluginConfig
     prompts: PromptStore
+    /**
+     * The conversation as the host holds it. Only the retrieval tools need it,
+     * and only to report the live context figures; the compress tools are built
+     * before the messages exist.
+     */
+    messages?: WithParts[]
 }
 
 export interface CompressRangeEntry {
